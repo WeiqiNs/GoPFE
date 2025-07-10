@@ -3,7 +3,7 @@ package fhfe
 import (
 	"fmt"
 
-	u "git.dbogatov.org/bu/ipfre/scheme/utilities"
+	u "github.com/WeiqiNs/GoIPE/utilities"
 )
 
 func generateCiphertext(M u.Matrix, message u.Vector, extras []u.Element, g u.Element) (output u.Vector, e error) {

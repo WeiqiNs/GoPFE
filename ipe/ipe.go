@@ -3,8 +3,8 @@ package ipe
 import (
 	"fmt"
 
-	"git.dbogatov.org/bu/ipfre/scheme/fhfe"
-	u "git.dbogatov.org/bu/ipfre/scheme/utilities"
+	"github.com/WeiqiNs/GoIPE/fhfe"
+	u "github.com/WeiqiNs/GoIPE/utilities"
 )
 
 type LookupTable map[string]int32

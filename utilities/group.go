@@ -1,7 +1,7 @@
 package utilities
 
 import (
-	"git.dbogatov.org/bu/ipfre/pbc-go"
+	"github.com/Nik-U/pbc"
 )
 
 type Element struct {

@@ -1,0 +1,55 @@
+name: GoIPE CI
+
+on: [ push, pull_request, workflow_dispatch ]
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y autoconf automake libtool flex bison autoconf-archive build-essential libfl-dev libgmp-dev
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.24"
+
+      - name: Checkout PBC
+        uses: actions/checkout@v4
+        with:
+          repository: blynn/pbc
+          path: pbc
+
+      - name: Install PBC
+        run: |
+          cd pbc
+          libtoolize --copy --force
+          aclocal
+          autoheader
+          automake --add-missing --copy
+          autoconf
+          ./configure
+          sudo make
+          sudo make install
+          sudo make clean
+
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Run all unit tests
+        env:
+          LD_LIBRARY_PATH: /usr/local/lib:${{ env.LD_LIBRARY_PATH }}
+        run: go test ./...

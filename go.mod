@@ -1,10 +1,10 @@
-module git.dbogatov.org/bu/ipfre/scheme
+module github.com/WeiqiNs/GoIPE
 
-go 1.18
-
-require gotest.tools/v3 v3.3.0
+go 1.24
 
 require (
-	git.dbogatov.org/bu/ipfre/pbc-go v0.0.0-20220808214154-12bd9e2b80bf // direct
-	github.com/google/go-cmp v0.5.5 // indirect
+	github.com/Nik-U/pbc v0.0.0-20181205041846-3e516ca0c5d6
+	gotest.tools/v3 v3.5.2
 )
+
+require github.com/google/go-cmp v0.7.0 // indirect
