@@ -18,6 +18,9 @@ jobs:
   coverage:
     name: Tests and coverage
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout repository
@@ -39,6 +42,15 @@ jobs:
 
       - name: Enforce 100% statement coverage
         run: go tool cover -func=coverage.out | awk '/^total:/ { print; if ($3 != "100.0%") exit 1 }'
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          use_oidc: true
+          files: coverage.out
+          disable_search: true
+          flags: unittests
+          fail_ci_if_error: true
 
   bench:
     name: Benchmark smoke test

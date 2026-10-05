@@ -1,6 +1,7 @@
 # Pairing-based Functional Encryption in Go (GoPFE)
 
 [![GoPFE CI](https://github.com/WeiqiNs/GoPFE/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/WeiqiNs/GoPFE/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/WeiqiNs/GoPFE/graph/badge.svg)](https://codecov.io/gh/WeiqiNs/GoPFE)
 
 **GoPFE** is a Go library of pairing-based functional encryption on BLS12-381: private-key *function-hiding*
 inner-product functional encryption (IPFE) and public-key quadratic functional encryption (QFE). It is the Go
