@@ -1,10 +1,10 @@
-module github.com/WeiqiNs/GoIPE
+module github.com/WeiqiNs/GoPFE
 
-go 1.24
+go 1.26.8
+
+require github.com/consensys/gnark-crypto v0.22.0
 
 require (
-	github.com/Nik-U/pbc v0.0.0-20181205041846-3e516ca0c5d6
-	gotest.tools/v3 v3.5.2
+	github.com/bits-and-blooms/bitset v1.25.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
-
-require github.com/google/go-cmp v0.7.0 // indirect

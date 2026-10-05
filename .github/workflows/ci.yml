@@ -1,55 +1,57 @@
-name: GoIPE CI
+name: CI
 
-on: [ push, pull_request, workflow_dispatch ]
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build_and_test:
+  coverage:
+    name: Tests and coverage
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y autoconf automake libtool flex bison autoconf-archive build-essential libfl-dev libgmp-dev
+      - name: Checkout repository
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v7
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
 
-      - name: Checkout PBC
-        uses: actions/checkout@v4
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test -count=1 -coverpkg=./... -coverprofile=coverage.out ./...
+
+      - name: Enforce 100% statement coverage
+        run: go tool cover -func=coverage.out | awk '/^total:/ { print; if ($3 != "100.0%") exit 1 }'
+
+  bench:
+    name: Benchmark smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
-          repository: blynn/pbc
-          path: pbc
+          go-version-file: go.mod
 
-      - name: Install PBC
-        run: |
-          cd pbc
-          libtoolize --copy --force
-          aclocal
-          autoheader
-          automake --add-missing --copy
-          autoconf
-          ./configure
-          sudo make
-          sudo make install
-          sudo make clean
-
-      - name: Checkout main repository
-        uses: actions/checkout@v4
-
-      - name: Cache Go modules
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Run all unit tests
-        env:
-          LD_LIBRARY_PATH: /usr/local/lib:${{ env.LD_LIBRARY_PATH }}
-        run: go test ./...
+      - name: Run every benchmark once
+        run: go test -run '^$' -bench . -benchtime 1x ./test
