@@ -2,6 +2,7 @@ package test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/WeiqiNs/GoPFE/group"
@@ -18,7 +19,7 @@ func TestInnerProduct(t *testing.T) {
 func (s innerProduct[M, K, C]) test(t *testing.T) {
 	t.Run("DecryptsInnerProductsExactlyWithinTheRange", func(t *testing.T) {
 		msk := s.setup(4)
-		decrypt := s.decryptor(msk, -100, 100)
+		decrypt, decryptMany := s.decryptors(msk, -100, 100)
 		sk := must(s.keyGen(msk, []int64{1, -2, 3, 4}))
 		cases := []struct {
 			x    []int64
@@ -33,16 +34,22 @@ func (s innerProduct[M, K, C]) test(t *testing.T) {
 			{[]int64{1, 0, 0, 25}, 0, false},
 			{[]int64{-1, 0, 0, -25}, 0, false},
 		}
-		for _, c := range cases {
-			if got, ok := decrypt(sk, must(s.encrypt(msk, c.x))); got != c.want || ok != c.ok {
+		cts := make([]C, len(cases))
+		want := make([]group.Decryption, len(cases))
+		for i, c := range cases {
+			cts[i], want[i] = must(s.encrypt(msk, c.x)), group.Decryption{Value: c.want, OK: c.ok}
+			if got, ok := decrypt(sk, cts[i]); got != c.want || ok != c.ok {
 				t.Errorf("x = %v: got (%d, %v), want (%d, %v)", c.x, got, ok, c.want, c.ok)
 			}
+		}
+		if got := decryptMany(sk, cts); !slices.Equal(got, want) {
+			t.Errorf("DecryptMany: got %v, want %v", got, want)
 		}
 	})
 
 	t.Run("DecryptsOneCiphertextUnderManyKeys", func(t *testing.T) {
 		msk := s.setup(4)
-		decrypt := s.decryptor(msk, -100, 100)
+		decrypt, _ := s.decryptors(msk, -100, 100)
 		ct := must(s.encrypt(msk, []int64{5, 6, 7, 8}))
 		cases := []struct {
 			y    []int64
@@ -61,7 +68,7 @@ func (s innerProduct[M, K, C]) test(t *testing.T) {
 
 	t.Run("HandlesVectorsOfLengthOne", func(t *testing.T) {
 		msk := s.setup(1)
-		decrypt := s.decryptor(msk, -100, 100)
+		decrypt, _ := s.decryptors(msk, -100, 100)
 		if got, ok := decrypt(must(s.keyGen(msk, []int64{-3})), must(s.encrypt(msk, []int64{7}))); got != -21 || !ok {
 			t.Errorf("got (%d, %v), want (-21, true)", got, ok)
 		}

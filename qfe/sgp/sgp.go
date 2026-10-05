@@ -66,8 +66,17 @@ func Encrypt(pk PublicKey, left, right []int64) (Ciphertext, error) {
 }
 
 func Decrypt(table *group.DlogTable, sk Key, ct Ciphertext) (int64, bool) {
+	return decrypt(table, sk, group.Affine{sk.Secret}, ct)
+}
+
+func DecryptMany(table *group.DlogTable, sk Key, cts []Ciphertext) []group.Decryption {
+	secret := group.Prepare([]group.G2{sk.Secret})
+	return group.DecryptEach(cts, func(ct Ciphertext) (int64, bool) { return decrypt(table, sk, secret, ct) })
+}
+
+func decrypt(table *group.DlogTable, sk Key, secret group.G2Side, ct Ciphertext) (int64, bool) {
 	var e group.PairingProduct
-	e.Mul([]group.G1{ct.Gamma}, []group.G2{sk.Secret})
+	e.Mul([]group.G1{ct.Gamma}, secret)
 	e.MulBilinear(ct.A0, sk.F, ct.B0)
 	e.MulBilinear(ct.A1, sk.F, ct.B1)
 	return table.Find(e.Value())

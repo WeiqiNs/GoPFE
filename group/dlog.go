@@ -60,6 +60,19 @@ func (t *DlogTable) Find(target GT) (int64, bool) {
 	return 0, false
 }
 
+type Decryption struct {
+	Value int64
+	OK    bool
+}
+
+func DecryptEach[C any](cts []C, decrypt func(C) (int64, bool)) []Decryption {
+	results := make([]Decryption, len(cts))
+	for i, ct := range cts {
+		results[i].Value, results[i].OK = decrypt(ct)
+	}
+	return results
+}
+
 func Dlog(base, target GT, lo, hi int64) (int64, bool) {
 	return NewDlogTable(base, lo, hi).Find(target)
 }

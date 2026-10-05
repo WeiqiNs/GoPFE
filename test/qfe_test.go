@@ -2,6 +2,7 @@ package test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/WeiqiNs/GoPFE/group"
@@ -20,7 +21,7 @@ func (s quadratic[P, M, K, C]) test(t *testing.T) {
 
 	t.Run("DecryptsQuadraticFormsExactlyWithinTheRange", func(t *testing.T) {
 		pk, msk := s.setup(3)
-		decrypt := s.decryptor(pk, -100, 100)
+		decrypt, decryptMany := s.decryptors(pk, -100, 100)
 		sk := must(s.keyGen(msk, f))
 		cases := []struct {
 			x, y []int64
@@ -35,16 +36,22 @@ func (s quadratic[P, M, K, C]) test(t *testing.T) {
 			{[]int64{1, 0, 0}, []int64{101, 0, 0}, 0, false},
 			{[]int64{0, 1, 0}, []int64{0, 101, 0}, 0, false},
 		}
-		for _, c := range cases {
-			if got, ok := decrypt(sk, must(s.encrypt(pk, c.x, c.y))); got != c.want || ok != c.ok {
+		cts := make([]C, len(cases))
+		want := make([]group.Decryption, len(cases))
+		for i, c := range cases {
+			cts[i], want[i] = must(s.encrypt(pk, c.x, c.y)), group.Decryption{Value: c.want, OK: c.ok}
+			if got, ok := decrypt(sk, cts[i]); got != c.want || ok != c.ok {
 				t.Errorf("x = %v, y = %v: got (%d, %v), want (%d, %v)", c.x, c.y, got, ok, c.want, c.ok)
 			}
+		}
+		if got := decryptMany(sk, cts); !slices.Equal(got, want) {
+			t.Errorf("DecryptMany: got %v, want %v", got, want)
 		}
 	})
 
 	t.Run("DecryptsOneCiphertextUnderManyKeys", func(t *testing.T) {
 		pk, msk := s.setup(3)
-		decrypt := s.decryptor(pk, -100, 100)
+		decrypt, _ := s.decryptors(pk, -100, 100)
 		ct := must(s.encrypt(pk, []int64{1, -2, 3}, []int64{4, 5, -6}))
 		cases := []struct {
 			f    [][]int64
@@ -63,7 +70,7 @@ func (s quadratic[P, M, K, C]) test(t *testing.T) {
 
 	t.Run("HandlesVectorsOfLengthOne", func(t *testing.T) {
 		pk, msk := s.setup(1)
-		decrypt := s.decryptor(pk, -100, 100)
+		decrypt, _ := s.decryptors(pk, -100, 100)
 		ct := must(s.encrypt(pk, []int64{7}, []int64{2}))
 		if got, ok := decrypt(must(s.keyGen(msk, [][]int64{{-3}})), ct); got != -42 || !ok {
 			t.Errorf("got (%d, %v), want (-42, true)", got, ok)

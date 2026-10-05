@@ -77,9 +77,6 @@ func TestMismatchedLengthsPanic(t *testing.T) {
 	mustPanic(t, "MSMG1", func() { MSMG1(G1MulVec(two), three) })
 	mustPanic(t, "MaskedG1", func() { MaskedG1(G1MulVec(two), NewZp(1), three) })
 	mustPanic(t, "MaskedG2", func() { MaskedG2(G2MulVec(two), NewZp(1), three) })
-	mustPanic(t, "Pair", func() { Pair(G1MulVec(two), G2MulVec(three)) })
-	mustPanic(t, "PairingProduct.Mul", func() {
-		var e PairingProduct
-		e.Mul(G1MulVec(two), G2MulVec(three))
-	})
+	mustPanic(t, "Pair", func() { Pair(G1MulVec(two), Affine(G2MulVec(three))) })
+	mustPanic(t, "Pair(Prepared)", func() { Pair(G1MulVec(two), Prepare(G2MulVec(three))) })
 }

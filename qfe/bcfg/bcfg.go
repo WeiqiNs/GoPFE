@@ -20,6 +20,8 @@ type Key struct {
 	F  group.Matrix
 	S1 group.G1
 	S2 group.G1
+	AF []group.G1
+	FB []group.G2
 }
 
 type Ciphertext struct {
@@ -48,8 +50,14 @@ func KeyGen(msk MasterKey, function [][]int64) (Key, error) {
 		return Key{}, err
 	}
 	gamma := group.RandomZp()
-	s1 := group.G1Mul(group.Add(group.Inner(msk.A, f.MulVec(msk.B)), group.Mul(gamma, msk.W)))
-	return Key{F: f, S1: s1, S2: group.G1Mul(gamma)}, nil
+	fb := f.MulVec(msk.B)
+	return Key{
+		F:  f,
+		S1: group.G1Mul(group.Add(group.Inner(msk.A, fb), group.Mul(gamma, msk.W))),
+		S2: group.G1Mul(gamma),
+		AF: group.G1MulVec(msk.A.MulMat(f)),
+		FB: group.G2MulVec(fb),
+	}, nil
 }
 
 func Encrypt(pk PublicKey, left, right []int64) (Ciphertext, error) {
@@ -73,12 +81,21 @@ func Encrypt(pk PublicKey, left, right []int64) (Ciphertext, error) {
 	}, nil
 }
 
-func Decrypt(table *group.DlogTable, pk PublicKey, sk Key, ct Ciphertext) (int64, bool) {
+func Decrypt(table *group.DlogTable, sk Key, ct Ciphertext) (int64, bool) {
+	return decrypt(table, sk, group.Affine(sk.FB), ct)
+}
+
+func DecryptMany(table *group.DlogTable, sk Key, cts []Ciphertext) []group.Decryption {
+	fb := group.Prepare(sk.FB)
+	return group.DecryptEach(cts, func(ct Ciphertext) (int64, bool) { return decrypt(table, sk, fb, ct) })
+}
+
+func decrypt(table *group.DlogTable, sk Key, fb group.G2Side, ct Ciphertext) (int64, bool) {
 	var e group.PairingProduct
 	e.MulBilinear(ct.C, sk.F, ct.D)
-	e.DivBilinear(pk.A, sk.F, ct.DHat)
-	e.DivBilinear(ct.CHat, sk.F, pk.B)
-	e.Div([]group.G1{sk.S1}, []group.G2{ct.E})
-	e.Mul([]group.G1{sk.S2}, []group.G2{ct.EHat})
+	e.Div(sk.AF, group.Affine(ct.DHat))
+	e.Div(ct.CHat, fb)
+	e.Div([]group.G1{sk.S1}, group.Affine{ct.E})
+	e.Mul([]group.G1{sk.S2}, group.Affine{ct.EHat})
 	return table.Find(e.Value())
 }

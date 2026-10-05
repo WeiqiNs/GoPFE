@@ -54,8 +54,17 @@ func Encrypt(msk MasterKey, message []int64) (Ciphertext, error) {
 }
 
 func Decrypt(table *group.DlogTable, sk Key, ct Ciphertext) (int64, bool) {
+	return decrypt(table, group.Affine(sk.R), group.Affine(sk.Vec), ct)
+}
+
+func DecryptMany(table *group.DlogTable, sk Key, cts []Ciphertext) []group.Decryption {
+	r, vec := group.Prepare(sk.R), group.Prepare(sk.Vec)
+	return group.DecryptEach(cts, func(ct Ciphertext) (int64, bool) { return decrypt(table, r, vec, ct) })
+}
+
+func decrypt(table *group.DlogTable, r, vec group.G2Side, ct Ciphertext) (int64, bool) {
 	var e group.PairingProduct
-	e.Mul(ct.Vec, sk.Vec)
-	e.Div(ct.R, sk.R)
+	e.Mul(ct.Vec, vec)
+	e.Div(ct.R, r)
 	return table.Find(e.Value())
 }
