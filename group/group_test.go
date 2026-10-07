@@ -1,6 +1,9 @@
 package group
 
-import "testing"
+import (
+	"math/big"
+	"testing"
+)
 
 func mustPanic(t *testing.T, name string, f func()) {
 	t.Helper()
@@ -37,6 +40,21 @@ func TestInvertSwapsZeroPivotsAndTracksTheDeterminant(t *testing.T) {
 func TestInvertRejectsSingularMatrices(t *testing.T) {
 	if _, _, ok := intMatrix(t, [][]int64{{1, 2}, {2, 4}}).invert(); ok {
 		t.Error("a singular matrix was inverted")
+	}
+}
+
+func TestGeneratorTablesMatchScalarMultiplicationBase(t *testing.T) {
+	scalars := Vector{NewZp(0), NewZp(-1), RandomZp()}
+	g1s, g2s := G1MulVec(scalars), G2MulVec(scalars)
+	for i, z := range scalars {
+		k := z.BigInt(new(big.Int))
+		var want1 G1
+		var want2 G2
+		want1.ScalarMultiplicationBase(k)
+		want2.ScalarMultiplicationBase(k)
+		if !g1s[i].Equal(&want1) || !g2s[i].Equal(&want2) {
+			t.Errorf("generator multiples of %s differ from ScalarMultiplicationBase", z.String())
+		}
 	}
 }
 

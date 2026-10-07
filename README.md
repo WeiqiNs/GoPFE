@@ -70,6 +70,8 @@ key costs less per ciphertext than calling `Decrypt` for each. Precomputing cost
 
 The `group` package wraps gnark-crypto's BLS12-381 with the operations the schemes need: `Zp`, `G1`, `G2` and `GT`,
 vectors and matrices over Zp, multi-scalar multiplication, multi-pairings and baby-step giant-step discrete logarithms.
+Multiples of the G1 and G2 generators come from fixed-base tables built on first use and run on one core, unlike
+gnark-crypto's batch scalar multiplication, which spreads a large vector across cores.
 
 ## Benchmarks
 
@@ -85,37 +87,37 @@ Inner-product FE, n = 10:
 
 | Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Bishop et al. | 0.65 | 0.88 | 0.52 | 3.87 | 2.88 |
-| Tomida et al. | 1.10 | 0.62 | 0.35 | 2.81 | 2.01 |
-| Kim et al. | 0.07 | 0.43 | 0.25 | 2.28 | 1.85 |
-| Lin | 0.01 | 0.64 | 0.37 | 2.56 | 1.82 |
-| Kim, Kim and Seo | 0.01 | 0.70 | 0.38 | 3.13 | 2.25 |
-| Ojaswi et al. | 0.02 | 0.61 | 0.35 | 1.74 | 1.25 |
+| Bishop et al. | 0.65 | 0.55 | 0.29 | 3.73 | 2.80 |
+| Tomida et al. | 1.10 | 0.53 | 0.27 | 2.83 | 2.00 |
+| Kim et al. | 0.07 | 0.24 | 0.12 | 2.12 | 1.81 |
+| Lin | 0.01 | 0.46 | 0.24 | 2.52 | 1.76 |
+| Kim, Kim and Seo | 0.01 | 0.58 | 0.29 | 3.13 | 2.16 |
+| Ojaswi et al. | 0.01 | 0.30 | 0.15 | 1.70 | 1.23 |
 
 Inner-product FE, n = 100:
 
 | Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Bishop et al. | 319.83 | 6.13 | 3.33 | 22.41 | 15.89 |
-| Tomida et al. | 347.54 | 5.54 | 3.12 | 21.05 | 15.06 |
-| Kim et al. | 38.84 | 2.66 | 1.37 | 11.67 | 8.60 |
-| Lin | 0.05 | 4.52 | 2.18 | 21.43 | 15.54 |
-| Kim, Kim and Seo | 0.09 | 4.50 | 2.15 | 21.37 | 15.37 |
-| Ojaswi et al. | 0.04 | 2.20 | 1.08 | 10.82 | 7.97 |
+| Bishop et al. | 318.14 | 5.08 | 3.24 | 22.77 | 15.91 |
+| Tomida et al. | 325.96 | 4.96 | 3.05 | 20.95 | 15.25 |
+| Kim et al. | 40.34 | 2.30 | 1.26 | 12.40 | 8.48 |
+| Lin | 0.05 | 4.13 | 2.12 | 20.61 | 14.76 |
+| Kim, Kim and Seo | 0.09 | 4.29 | 2.22 | 21.66 | 15.37 |
+| Ojaswi et al. | 0.04 | 2.18 | 1.05 | 10.86 | 7.76 |
 
 Quadratic FE, n = 10:
 
 | Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Baltico et al. | 0.63 | 0.64 | 4.13 | 4.59 | 4.23 |
-| Dufour-Sans et al. | 0.54 | 0.10 | 4.11 | 4.11 | 4.14 |
+| Baltico et al. | 0.34 | 0.33 | 3.20 | 4.48 | 4.14 |
+| Dufour-Sans et al. | 0.32 | 0.03 | 3.36 | 4.06 | 4.05 |
 
 Quadratic FE, n = 100:
 
 | Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Baltico et al. | 3.58 | 4.10 | 35.37 | 41.58 | 37.60 |
-| Dufour-Sans et al. | 3.45 | 0.46 | 36.03 | 39.65 | 39.84 |
+| Baltico et al. | 3.17 | 3.69 | 29.50 | 40.80 | 37.56 |
+| Dufour-Sans et al. | 3.11 | 0.39 | 39.67 | 44.63 | 40.73 |
 
 ## Testing
 

@@ -1,16 +1,12 @@
 package group
 
-import (
-	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
-)
-
 type DlogTable struct {
 	lo    int64
 	span  uint64
 	steps uint64
 	shift GT
 	giant GT
-	baby  map[[bls12381.SizeOfGT]byte]uint64
+	baby  map[GT]uint64
 }
 
 func babyStepCount(span uint64) uint64 {
@@ -35,14 +31,13 @@ func NewDlogTable(base GT, lo, hi int64) *DlogTable {
 		steps: steps,
 		shift: ExpGT(base, Neg(NewZp(lo))),
 		giant: ExpGT(base, Neg(NewZp(int64(steps)))),
-		baby:  make(map[[bls12381.SizeOfGT]byte]uint64, steps),
+		baby:  make(map[GT]uint64, steps),
 	}
 	var power GT
 	power.SetOne()
 	for j := range steps {
-		key := power.Bytes()
-		if _, seen := t.baby[key]; !seen {
-			t.baby[key] = j
+		if _, seen := t.baby[power]; !seen {
+			t.baby[power] = j
 		}
 		power = MulGT(power, base)
 	}
@@ -52,7 +47,7 @@ func NewDlogTable(base GT, lo, hi int64) *DlogTable {
 func (t *DlogTable) Find(target GT) (int64, bool) {
 	gamma := MulGT(target, t.shift)
 	for i := uint64(0); i <= t.span/t.steps; i++ {
-		if j, ok := t.baby[gamma.Bytes()]; ok && i*t.steps+j <= t.span {
+		if j, ok := t.baby[gamma]; ok && i*t.steps+j <= t.span {
 			return int64(uint64(t.lo) + i*t.steps + j), true
 		}
 		gamma = MulGT(gamma, t.giant)

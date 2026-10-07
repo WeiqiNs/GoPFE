@@ -3,6 +3,7 @@ package group
 import (
 	"math/big"
 	"slices"
+	"sync"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
@@ -24,7 +25,37 @@ type G2Side interface {
 	mulInto(e *PairingProduct, ps []G1)
 }
 
+type jacobian[J, A any] interface {
+	*J
+	FromAffine(a *A) *J
+	AddAssign(q *J) *J
+	AddMixed(a *A) *J
+	DoubleAssign() *J
+	ScalarMultiplication(q *J, s *big.Int) *J
+}
+
+type affine[A any] interface {
+	*A
+	Neg(a *A) *A
+}
+
+type fixedBase[J, A any, PJ jacobian[J, A], PA affine[A]] struct {
+	table     []A
+	normalize func([]J) []A
+}
+
+const (
+	windowBits  = 8
+	windowCount = fr.Bytes
+	windowSize  = 1 << (windowBits - 1)
+)
+
 var g1Generator, g2Generator, gtGenerator = generators()
+
+var (
+	g1Base = lazyFixedBase(g1Generator, bls12381.BatchJacobianToAffineG1)
+	g2Base = lazyFixedBase(g2Generator, batchJacobianToAffineG2)
+)
 
 func generators() (G1, G2, GT) {
 	_, _, g1, g2 := bls12381.Generators()
@@ -73,24 +104,119 @@ func Inverse(x Zp) Zp {
 	return z
 }
 
+func lazyFixedBase[J, A any, PJ jacobian[J, A], PA affine[A]](
+	generator A, normalize func([]J) []A,
+) func() *fixedBase[J, A, PJ, PA] {
+	return sync.OnceValue(func() *fixedBase[J, A, PJ, PA] {
+		points := make([]J, windowCount*windowSize)
+		var base J
+		PJ(&base).FromAffine(&generator)
+		for w := range windowCount {
+			row := points[w*windowSize : (w+1)*windowSize]
+			row[0] = base
+			for j := 1; j < windowSize; j++ {
+				row[j] = row[j-1]
+				PJ(&row[j]).AddAssign(&base)
+			}
+			base = row[windowSize-1]
+			PJ(&base).DoubleAssign()
+		}
+		return &fixedBase[J, A, PJ, PA]{table: normalize(points), normalize: normalize}
+	})
+}
+
+func signedDigits(z Zp) [windowCount]int {
+	bytes := z.Bytes()
+	var digits [windowCount]int
+	carry := 0
+	for w := range windowCount {
+		d := int(bytes[windowCount-1-w]) + carry
+		carry = 0
+		if d > windowSize {
+			d -= 1 << windowBits
+			carry = 1
+		}
+		digits[w] = d
+	}
+	return digits
+}
+
+func (b *fixedBase[J, A, PJ, PA]) sum(z Zp) J {
+	var acc J
+	for w, d := range signedDigits(z) {
+		switch {
+		case d > 0:
+			PJ(&acc).AddMixed(&b.table[w*windowSize+d-1])
+		case d < 0:
+			p := b.table[w*windowSize-d-1]
+			PA(&p).Neg(&p)
+			PJ(&acc).AddMixed(&p)
+		}
+	}
+	return acc
+}
+
+func (b *fixedBase[J, A, PJ, PA]) mulVec(v Vector) []A {
+	sums := make([]J, len(v))
+	for i := range v {
+		sums[i] = b.sum(v[i])
+	}
+	return b.normalize(sums)
+}
+
+func (b *fixedBase[J, A, PJ, PA]) masked(base []A, r Zp, m Vector) []A {
+	mustMatch(len(base), len(m))
+	k := r.BigInt(new(big.Int))
+	sums := make([]J, len(base))
+	for i := range sums {
+		encoded := b.sum(m[i])
+		PJ(&sums[i]).FromAffine(&base[i])
+		PJ(&sums[i]).ScalarMultiplication(&sums[i], k)
+		PJ(&sums[i]).AddAssign(&encoded)
+	}
+	return b.normalize(sums)
+}
+
+func batchJacobianToAffineG2(points []bls12381.G2Jac) []G2 {
+	result := make([]G2, len(points))
+	var accumulator bls12381.E2
+	accumulator.SetOne()
+	for i := range points {
+		if !points[i].Z.IsZero() {
+			result[i].X = accumulator
+			accumulator.Mul(&accumulator, &points[i].Z)
+		}
+	}
+	var inverse bls12381.E2
+	inverse.Inverse(&accumulator)
+	for i := len(points) - 1; i >= 0; i-- {
+		if points[i].Z.IsZero() {
+			continue
+		}
+		var a, b bls12381.E2
+		a.Mul(&result[i].X, &inverse)
+		inverse.Mul(&inverse, &points[i].Z)
+		b.Square(&a)
+		result[i].X.Mul(&points[i].X, &b)
+		result[i].Y.Mul(&points[i].Y, &b).Mul(&result[i].Y, &a)
+	}
+	return result
+}
+
 func G1Mul(z Zp) G1 {
-	var p G1
-	p.ScalarMultiplicationBase(z.BigInt(new(big.Int)))
-	return p
+	return G1MulVec(Vector{z})[0]
 }
 
 func G2Mul(z Zp) G2 {
-	var p G2
-	p.ScalarMultiplicationBase(z.BigInt(new(big.Int)))
-	return p
+	return G2MulVec(Vector{z})[0]
 }
 
 func G1MulVec(v Vector) []G1 {
-	return bls12381.BatchScalarMultiplicationG1(&g1Generator, v)
+	return g1Base().mulVec(v)
 }
 
 func G2MulVec(v Vector) []G2 {
-	return bls12381.BatchScalarMultiplicationG2(&g2Generator, v)
+	return g2Base().mulVec(v)
 }
 
 func ScaleG2(p G2, k Zp) G2 {
@@ -113,30 +239,11 @@ func MSMG1(points []G1, scalars Vector) G1 {
 }
 
 func MaskedG1(base []G1, r Zp, m Vector) []G1 {
-	mustMatch(len(base), len(m))
-	k := r.BigInt(new(big.Int))
-	encoded := G1MulVec(m)
-	sums := make([]bls12381.G1Jac, len(base))
-	for i := range sums {
-		sums[i].FromAffine(&base[i])
-		sums[i].ScalarMultiplication(&sums[i], k)
-		sums[i].AddMixed(&encoded[i])
-	}
-	return bls12381.BatchJacobianToAffineG1(sums)
+	return g1Base().masked(base, r, m)
 }
 
 func MaskedG2(base []G2, r Zp, m Vector) []G2 {
-	mustMatch(len(base), len(m))
-	k := r.BigInt(new(big.Int))
-	points := G2MulVec(m)
-	for i := range points {
-		var sum bls12381.G2Jac
-		sum.FromAffine(&base[i])
-		sum.ScalarMultiplication(&sum, k)
-		sum.AddMixed(&points[i])
-		points[i].FromJacobian(&sum)
-	}
-	return points
+	return g2Base().masked(base, r, m)
 }
 
 func Prepare(qs []G2) Prepared {
