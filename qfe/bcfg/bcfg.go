@@ -33,6 +33,16 @@ type Ciphertext struct {
 	EHat group.G2
 }
 
+type PreparedKey struct {
+	Key Key
+	FB  group.Prepared
+}
+
+type DecryptionKey interface {
+	Key | PreparedKey
+	split() (Key, group.G2Side)
+}
+
 func Setup(n int) (PublicKey, MasterKey) {
 	w := group.RandomZp()
 	a, b := group.RandomVector(n), group.RandomVector(n)
@@ -81,21 +91,25 @@ func Encrypt(pk PublicKey, left, right []int64) (Ciphertext, error) {
 	}, nil
 }
 
-func Decrypt(table *group.DlogTable, sk Key, ct Ciphertext) (int64, bool) {
-	return decrypt(table, sk, group.Affine(sk.FB), ct)
+func Prepare(sk Key) PreparedKey {
+	return PreparedKey{Key: sk, FB: group.Prepare(sk.FB)}
 }
 
-func DecryptMany(table *group.DlogTable, sk Key, cts []Ciphertext) []group.Decryption {
-	fb := group.Prepare(sk.FB)
-	return group.DecryptEach(cts, func(ct Ciphertext) (int64, bool) { return decrypt(table, sk, fb, ct) })
-}
-
-func decrypt(table *group.DlogTable, sk Key, fb group.G2Side, ct Ciphertext) (int64, bool) {
+func Decrypt[K DecryptionKey](table *group.DlogTable, sk K, ct Ciphertext) (int64, bool) {
+	key, fb := sk.split()
 	var e group.PairingProduct
-	e.MulBilinear(ct.C, sk.F, ct.D)
-	e.Div(sk.AF, group.Affine(ct.DHat))
+	e.MulBilinear(ct.C, key.F, ct.D)
+	e.Div(key.AF, group.Affine(ct.DHat))
 	e.Div(ct.CHat, fb)
-	e.Div([]group.G1{sk.S1}, group.Affine{ct.E})
-	e.Mul([]group.G1{sk.S2}, group.Affine{ct.EHat})
+	e.Div([]group.G1{key.S1}, group.Affine{ct.E})
+	e.Mul([]group.G1{key.S2}, group.Affine{ct.EHat})
 	return table.Find(e.Value())
+}
+
+func (sk Key) split() (Key, group.G2Side) {
+	return sk, group.Affine(sk.FB)
+}
+
+func (sk PreparedKey) split() (Key, group.G2Side) {
+	return sk.Key, sk.FB
 }

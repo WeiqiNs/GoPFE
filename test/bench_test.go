@@ -4,16 +4,10 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
-	"slices"
 	"testing"
-
-	"github.com/WeiqiNs/GoPFE/group"
 )
 
-const (
-	bound = 10000
-	batch = 10
-)
+const bound = 10000
 
 func randomEntries(rng *rand.Rand, n int, largest int64) []int64 {
 	v := make([]int64, n)
@@ -59,19 +53,17 @@ func BenchmarkInnerProduct(b *testing.B) { benchmarkSchemes(b, innerProductSchem
 
 func BenchmarkQuadratic(b *testing.B) { benchmarkSchemes(b, quadraticSchemes) }
 
-func (s innerProduct[M, K, C]) benchmark(b *testing.B, n int) {
+func (s innerProduct[M, K, P, C]) benchmark(b *testing.B, n int) {
 	x, y, want := innerProductSample(n)
 	msk := s.setup(n)
-	sk, cts := must(s.keyGen(msk, y)), make([]C, batch)
-	for i := range cts {
-		cts[i] = must(s.encrypt(msk, x))
-	}
-	decrypt, decryptMany := s.decryptors(msk, 0, bound)
-	if got, ok := decrypt(sk, cts[0]); got != want || !ok {
+	sk, ct := must(s.keyGen(msk, y)), must(s.encrypt(msk, x))
+	decrypt, decryptPrepared := s.decryptors(msk, 0, bound)
+	prepared := s.prepare(sk)
+	if got, ok := decrypt(sk, ct); got != want || !ok {
 		b.Fatalf("decrypted (%d, %v), want (%d, true)", got, ok, want)
 	}
-	if got := decryptMany(sk, cts); !slices.Equal(got, slices.Repeat([]group.Decryption{{Value: want, OK: true}}, batch)) {
-		b.Fatalf("DecryptMany decrypted %v, want %d each", got, want)
+	if got, ok := decryptPrepared(prepared, ct); got != want || !ok {
+		b.Fatalf("the prepared key decrypted (%d, %v), want (%d, true)", got, ok, want)
 	}
 	b.Run("Setup", func(b *testing.B) {
 		for b.Loop() {
@@ -90,29 +82,32 @@ func (s innerProduct[M, K, C]) benchmark(b *testing.B, n int) {
 	})
 	b.Run("Dec", func(b *testing.B) {
 		for b.Loop() {
-			decrypt(sk, cts[0])
+			decrypt(sk, ct)
 		}
 	})
-	b.Run("DecMany", func(b *testing.B) {
+	b.Run("Prepare", func(b *testing.B) {
 		for b.Loop() {
-			decryptMany(sk, cts)
+			s.prepare(sk)
+		}
+	})
+	b.Run("PreparedDec", func(b *testing.B) {
+		for b.Loop() {
+			decryptPrepared(prepared, ct)
 		}
 	})
 }
 
-func (s quadratic[P, M, K, C]) benchmark(b *testing.B, n int) {
+func (s quadratic[PK, M, K, P, C]) benchmark(b *testing.B, n int) {
 	x, y, f, want := quadraticSample(n)
 	pk, msk := s.setup(n)
-	sk, cts := must(s.keyGen(msk, f)), make([]C, batch)
-	for i := range cts {
-		cts[i] = must(s.encrypt(pk, x, y))
-	}
-	decrypt, decryptMany := s.decryptors(pk, 0, bound)
-	if got, ok := decrypt(sk, cts[0]); got != want || !ok {
+	sk, ct := must(s.keyGen(msk, f)), must(s.encrypt(pk, x, y))
+	decrypt, decryptPrepared := s.decryptors(pk, 0, bound)
+	prepared := s.prepare(sk)
+	if got, ok := decrypt(sk, ct); got != want || !ok {
 		b.Fatalf("decrypted (%d, %v), want (%d, true)", got, ok, want)
 	}
-	if got := decryptMany(sk, cts); !slices.Equal(got, slices.Repeat([]group.Decryption{{Value: want, OK: true}}, batch)) {
-		b.Fatalf("DecryptMany decrypted %v, want %d each", got, want)
+	if got, ok := decryptPrepared(prepared, ct); got != want || !ok {
+		b.Fatalf("the prepared key decrypted (%d, %v), want (%d, true)", got, ok, want)
 	}
 	b.Run("Setup", func(b *testing.B) {
 		for b.Loop() {
@@ -131,12 +126,17 @@ func (s quadratic[P, M, K, C]) benchmark(b *testing.B, n int) {
 	})
 	b.Run("Dec", func(b *testing.B) {
 		for b.Loop() {
-			decrypt(sk, cts[0])
+			decrypt(sk, ct)
 		}
 	})
-	b.Run("DecMany", func(b *testing.B) {
+	b.Run("Prepare", func(b *testing.B) {
 		for b.Loop() {
-			decryptMany(sk, cts)
+			s.prepare(sk)
+		}
+	})
+	b.Run("PreparedDec", func(b *testing.B) {
+		for b.Loop() {
+			decryptPrepared(prepared, ct)
 		}
 	})
 }

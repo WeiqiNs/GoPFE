@@ -27,6 +27,16 @@ type Ciphertext struct {
 	B1    []group.G2
 }
 
+type PreparedKey struct {
+	F      group.Matrix
+	Secret group.Prepared
+}
+
+type DecryptionKey interface {
+	Key | PreparedKey
+	split() (group.Matrix, group.G2Side)
+}
+
 func Setup(n int) (PublicKey, MasterKey) {
 	s, t := group.RandomVector(n), group.RandomVector(n)
 	return PublicKey{N: n, S: group.G1MulVec(s), T: group.G2MulVec(t)}, MasterKey{N: n, S: s, T: t}
@@ -65,19 +75,23 @@ func Encrypt(pk PublicKey, left, right []int64) (Ciphertext, error) {
 	}, nil
 }
 
-func Decrypt(table *group.DlogTable, sk Key, ct Ciphertext) (int64, bool) {
-	return decrypt(table, sk, group.Affine{sk.Secret}, ct)
+func Prepare(sk Key) PreparedKey {
+	return PreparedKey{F: sk.F, Secret: group.Prepare([]group.G2{sk.Secret})}
 }
 
-func DecryptMany(table *group.DlogTable, sk Key, cts []Ciphertext) []group.Decryption {
-	secret := group.Prepare([]group.G2{sk.Secret})
-	return group.DecryptEach(cts, func(ct Ciphertext) (int64, bool) { return decrypt(table, sk, secret, ct) })
-}
-
-func decrypt(table *group.DlogTable, sk Key, secret group.G2Side, ct Ciphertext) (int64, bool) {
+func Decrypt[K DecryptionKey](table *group.DlogTable, sk K, ct Ciphertext) (int64, bool) {
+	f, secret := sk.split()
 	var e group.PairingProduct
 	e.Mul([]group.G1{ct.Gamma}, secret)
-	e.MulBilinear(ct.A0, sk.F, ct.B0)
-	e.MulBilinear(ct.A1, sk.F, ct.B1)
+	e.MulBilinear(ct.A0, f, ct.B0)
+	e.MulBilinear(ct.A1, f, ct.B1)
 	return table.Find(e.Value())
+}
+
+func (sk Key) split() (group.Matrix, group.G2Side) {
+	return sk.F, group.Affine{sk.Secret}
+}
+
+func (sk PreparedKey) split() (group.Matrix, group.G2Side) {
+	return sk.F, sk.Secret
 }

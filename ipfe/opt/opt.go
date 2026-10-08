@@ -19,6 +19,16 @@ type Ciphertext struct {
 	Vec []group.G1
 }
 
+type PreparedKey struct {
+	R   group.Prepared
+	Vec group.Prepared
+}
+
+type DecryptionKey interface {
+	Key | PreparedKey
+	sides() (r, vec group.G2Side)
+}
+
 func Setup(n int) MasterKey {
 	b, inverse, _ := group.RandomInvertible(4)
 	return MasterKey{N: n, A: group.RandomMatrix(2, n), B: b, Bi: inverse.Transpose()}
@@ -53,18 +63,22 @@ func Encrypt(msk MasterKey, message []int64) (Ciphertext, error) {
 	}, nil
 }
 
-func Decrypt(table *group.DlogTable, sk Key, ct Ciphertext) (int64, bool) {
-	return decrypt(table, group.Affine(sk.R), group.Affine(sk.Vec), ct)
+func Prepare(sk Key) PreparedKey {
+	return PreparedKey{R: group.Prepare(sk.R), Vec: group.Prepare(sk.Vec)}
 }
 
-func DecryptMany(table *group.DlogTable, sk Key, cts []Ciphertext) []group.Decryption {
-	r, vec := group.Prepare(sk.R), group.Prepare(sk.Vec)
-	return group.DecryptEach(cts, func(ct Ciphertext) (int64, bool) { return decrypt(table, r, vec, ct) })
-}
-
-func decrypt(table *group.DlogTable, r, vec group.G2Side, ct Ciphertext) (int64, bool) {
+func Decrypt[K DecryptionKey](table *group.DlogTable, sk K, ct Ciphertext) (int64, bool) {
+	r, vec := sk.sides()
 	var e group.PairingProduct
 	e.Mul(ct.Vec, vec)
 	e.Div(ct.R, r)
 	return table.Find(e.Value())
+}
+
+func (sk Key) sides() (r, vec group.G2Side) {
+	return group.Affine(sk.R), group.Affine(sk.Vec)
+}
+
+func (sk PreparedKey) sides() (r, vec group.G2Side) {
+	return sk.R, sk.Vec
 }

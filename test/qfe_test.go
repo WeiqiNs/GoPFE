@@ -2,13 +2,12 @@ package test
 
 import (
 	"errors"
-	"slices"
 	"testing"
 
 	"github.com/WeiqiNs/GoPFE/group"
 )
 
-func (s quadratic[P, M, K, C]) schemeName() string { return s.name }
+func (s quadratic[PK, M, K, P, C]) schemeName() string { return s.name }
 
 func TestQuadratic(t *testing.T) {
 	for _, s := range quadraticSchemes {
@@ -16,13 +15,14 @@ func TestQuadratic(t *testing.T) {
 	}
 }
 
-func (s quadratic[P, M, K, C]) test(t *testing.T) {
+func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 	f := [][]int64{{1, 0, 2}, {0, -1, 0}, {3, 1, 1}}
 
 	t.Run("DecryptsQuadraticFormsExactlyWithinTheRange", func(t *testing.T) {
 		pk, msk := s.setup(3)
-		decrypt, decryptMany := s.decryptors(pk, -100, 100)
+		decrypt, decryptPrepared := s.decryptors(pk, -100, 100)
 		sk := must(s.keyGen(msk, f))
+		prepared := s.prepare(sk)
 		cases := []struct {
 			x, y []int64
 			want int64
@@ -36,16 +36,14 @@ func (s quadratic[P, M, K, C]) test(t *testing.T) {
 			{[]int64{1, 0, 0}, []int64{101, 0, 0}, 0, false},
 			{[]int64{0, 1, 0}, []int64{0, 101, 0}, 0, false},
 		}
-		cts := make([]C, len(cases))
-		want := make([]group.Decryption, len(cases))
-		for i, c := range cases {
-			cts[i], want[i] = must(s.encrypt(pk, c.x, c.y)), group.Decryption{Value: c.want, OK: c.ok}
-			if got, ok := decrypt(sk, cts[i]); got != c.want || ok != c.ok {
+		for _, c := range cases {
+			ct := must(s.encrypt(pk, c.x, c.y))
+			if got, ok := decrypt(sk, ct); got != c.want || ok != c.ok {
 				t.Errorf("x = %v, y = %v: got (%d, %v), want (%d, %v)", c.x, c.y, got, ok, c.want, c.ok)
 			}
-		}
-		if got := decryptMany(sk, cts); !slices.Equal(got, want) {
-			t.Errorf("DecryptMany: got %v, want %v", got, want)
+			if got, ok := decryptPrepared(prepared, ct); got != c.want || ok != c.ok {
+				t.Errorf("x = %v, y = %v with a prepared key: got (%d, %v), want (%d, %v)", c.x, c.y, got, ok, c.want, c.ok)
+			}
 		}
 	})
 

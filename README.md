@@ -47,6 +47,8 @@ table := group.NewDlogTable(opt.Base(), -1000, 1000)
 sk, err := opt.KeyGen(msk, []int64{1, 2, 3})
 ct, err := opt.Encrypt(msk, []int64{4, -5, 6})
 result, ok := opt.Decrypt(table, sk, ct)
+prepared := opt.Prepare(sk)
+sameResult, ok := opt.Decrypt(table, prepared, ct)
 ```
 
 ```go
@@ -63,10 +65,13 @@ fixed-base `Decrypt` take a `group.DlogTable` built once for a range (over `msk.
 for the others) and reused across decryptions; Bishop et al. and Kim et al. derive the base from each key and
 ciphertext, so their `Decrypt` takes the bounds instead.
 
-`DecryptMany` takes the same arguments as `Decrypt` but a slice of ciphertexts, and returns a `group.Decryption` per
-ciphertext. It precomputes the key's G2 side of the pairing once and reuses it, so decrypting many ciphertexts under one
-key costs less per ciphertext than calling `Decrypt` for each. Precomputing costs nearly as much as a decryption, so
-`Decrypt` stays the faster choice for a single ciphertext.
+Every scheme also has `Prepare(sk)`, which precomputes the key's pairing lines once (gnark-crypto's `PrecomputeLines`)
+and returns a `PreparedKey`. `Decrypt` accepts either a `Key` or a `PreparedKey`, the two types its `DecryptionKey`
+constraint lists, and returns the same result for both. An IPFE key is all of its decryption's G2 side, so its prepared
+`Decrypt` costs about three fifths to three quarters of `Decrypt` with the key; prepare a key that will decrypt many
+ciphertexts. A QFE decryption also pairs the ciphertext's own G2 points, which no key can prepare, so a prepared Baltico
+et al. key saves less, and a prepared Dufour-Sans et al. key, which fixes one G2 point, decrypts in about the time of
+the plain key. A prepared key holds about 24 KB per G2 point.
 
 The `group` package wraps gnark-crypto's BLS12-381 with the operations the schemes need: `Zp`, `G1`, `G2` and `GT`,
 vectors and matrices over Zp, multi-scalar multiplication, multi-pairings and baby-step giant-step discrete logarithms.
@@ -78,46 +83,47 @@ gnark-crypto's batch scalar multiplication, which spreads a large vector across 
 `test/bench_test.go` times every scheme with the same input sizes and bounds as LibPFE's benchmark and checks each
 decryption against the true result before timing it. Run it with `go test -run '^$' -bench . ./test`.
 
-The numbers below are milliseconds per operation, measured with Go 1.27 and gnark-crypto v0.22 on an AMD Ryzen 7
-9800X3D. Inputs are random vectors (and matrices) whose results lie in [0, 10000]. Fixed-base schemes reuse one
-discrete-log table, which is excluded from Dec; Bishop et al. and Kim et al. search the range on every decryption.
-"Dec, reused key" is `DecryptMany` over 10 ciphertexts, divided by 10.
+The numbers below are milliseconds per operation on one core (`taskset -c 2` and `-cpu 1`), measured with Go 1.27 and
+gnark-crypto v0.22 on an AMD Ryzen 7 9800X3D. Inputs are random vectors (and matrices) whose results lie in [0, 10000].
+Fixed-base schemes reuse one discrete-log table, which is excluded from Dec; Bishop et al. and Kim et al. search the
+range on every decryption. Prepare is the one-time cost of `Prepare(sk)`, and Prepared Dec decrypts with the prepared
+key.
 
 Inner-product FE, n = 10:
 
-| Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Bishop et al. | 0.65 | 0.55 | 0.29 | 3.73 | 2.80 |
-| Tomida et al. | 1.10 | 0.53 | 0.27 | 2.83 | 2.00 |
-| Kim et al. | 0.07 | 0.24 | 0.12 | 2.12 | 1.81 |
-| Lin | 0.01 | 0.46 | 0.24 | 2.52 | 1.76 |
-| Kim, Kim and Seo | 0.01 | 0.58 | 0.29 | 3.13 | 2.16 |
-| Ojaswi et al. | 0.01 | 0.30 | 0.15 | 1.70 | 1.23 |
+| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Bishop et al. | 0.65 | 0.56 | 0.28 | 3.80 | 2.29 | 2.60 |
+| Tomida et al. | 1.13 | 0.53 | 0.26 | 2.90 | 2.20 | 1.75 |
+| Kim et al. | 0.07 | 0.24 | 0.12 | 2.22 | 0.94 | 1.72 |
+| Lin | 0.01 | 0.46 | 0.22 | 2.59 | 1.94 | 1.57 |
+| Kim, Kim and Seo | 0.01 | 0.58 | 0.28 | 3.22 | 2.58 | 1.96 |
+| Ojaswi et al. | 0.01 | 0.30 | 0.15 | 1.82 | 1.26 | 1.13 |
 
 Inner-product FE, n = 100:
 
-| Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Bishop et al. | 318.14 | 5.08 | 3.24 | 22.77 | 15.91 |
-| Tomida et al. | 325.96 | 4.96 | 3.05 | 20.95 | 15.25 |
-| Kim et al. | 40.34 | 2.30 | 1.26 | 12.40 | 8.48 |
-| Lin | 0.05 | 4.13 | 2.12 | 20.61 | 14.76 |
-| Kim, Kim and Seo | 0.09 | 4.29 | 2.22 | 21.66 | 15.37 |
-| Ojaswi et al. | 0.04 | 2.18 | 1.05 | 10.86 | 7.76 |
+| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Bishop et al. | 348.76 | 5.52 | 2.99 | 22.69 | 18.05 | 14.61 |
+| Tomida et al. | 341.95 | 5.00 | 2.89 | 21.66 | 18.28 | 14.87 |
+| Kim et al. | 41.40 | 2.31 | 1.26 | 11.80 | 8.92 | 7.50 |
+| Lin | 0.05 | 4.11 | 1.96 | 21.39 | 17.46 | 13.61 |
+| Kim, Kim and Seo | 0.09 | 6.19 | 2.53 | 22.48 | 19.35 | 13.79 |
+| Ojaswi et al. | 0.04 | 2.22 | 1.04 | 11.28 | 9.45 | 7.08 |
 
 Quadratic FE, n = 10:
 
-| Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Baltico et al. | 0.34 | 0.33 | 3.20 | 4.48 | 4.14 |
-| Dufour-Sans et al. | 0.32 | 0.03 | 3.36 | 4.06 | 4.05 |
+| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baltico et al. | 0.37 | 0.33 | 3.38 | 4.73 | 0.85 | 4.21 |
+| Dufour-Sans et al. | 0.32 | 0.03 | 3.51 | 4.43 | 0.08 | 4.50 |
 
 Quadratic FE, n = 100:
 
-| Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Baltico et al. | 3.17 | 3.69 | 29.50 | 40.80 | 37.56 |
-| Dufour-Sans et al. | 3.11 | 0.39 | 39.67 | 44.63 | 40.73 |
+| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baltico et al. | 3.88 | 4.82 | 38.55 | 42.97 | 8.81 | 38.04 |
+| Dufour-Sans et al. | 3.09 | 0.36 | 31.28 | 41.64 | 0.08 | 43.95 |
 
 ## Testing
 
