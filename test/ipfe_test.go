@@ -17,7 +17,7 @@ func TestInnerProduct(t *testing.T) {
 
 func (s innerProduct[M, K, P, C]) test(t *testing.T) {
 	t.Run("DecryptsInnerProductsExactlyWithinTheRange", func(t *testing.T) {
-		msk := s.setup(4)
+		msk := must(s.setup(4))
 		decrypt, decryptPrepared := s.decryptors(msk, -100, 100)
 		sk := must(s.keyGen(msk, []int64{1, -2, 3, 4}))
 		prepared := s.prepare(sk)
@@ -46,7 +46,7 @@ func (s innerProduct[M, K, P, C]) test(t *testing.T) {
 	})
 
 	t.Run("DecryptsOneCiphertextUnderManyKeys", func(t *testing.T) {
-		msk := s.setup(4)
+		msk := must(s.setup(4))
 		decrypt, _ := s.decryptors(msk, -100, 100)
 		ct := must(s.encrypt(msk, []int64{5, 6, 7, 8}))
 		cases := []struct {
@@ -65,15 +65,21 @@ func (s innerProduct[M, K, P, C]) test(t *testing.T) {
 	})
 
 	t.Run("HandlesVectorsOfLengthOne", func(t *testing.T) {
-		msk := s.setup(1)
+		msk := must(s.setup(1))
 		decrypt, _ := s.decryptors(msk, -100, 100)
 		if got, ok := decrypt(must(s.keyGen(msk, []int64{-3})), must(s.encrypt(msk, []int64{7}))); got != -21 || !ok {
 			t.Errorf("got (%d, %v), want (-21, true)", got, ok)
 		}
 	})
 
+	t.Run("RejectsDimensionsBelowOne", func(t *testing.T) {
+		if _, err := s.setup(0); !errors.Is(err, group.ErrShape) {
+			t.Errorf("setup(0): got %v, want ErrShape", err)
+		}
+	})
+
 	t.Run("RejectsVectorsOfTheWrongLength", func(t *testing.T) {
-		msk := s.setup(4)
+		msk := must(s.setup(4))
 		for _, v := range [][]int64{{1, 2, 3}, {1, 2, 3, 4, 5}} {
 			if _, err := s.keyGen(msk, v); !errors.Is(err, group.ErrShape) {
 				t.Errorf("keyGen(%v): got %v, want ErrShape", v, err)
@@ -84,8 +90,22 @@ func (s innerProduct[M, K, P, C]) test(t *testing.T) {
 		}
 	})
 
+	t.Run("EncodingsRoundTripAndDecrypt", func(t *testing.T) {
+		msk := must(s.setup(4))
+		restored := roundTrip(t, msk)
+		sk := roundTrip(t, must(s.keyGen(restored, []int64{1, -2, 3, 4})))
+		ct := roundTrip(t, must(s.encrypt(msk, []int64{5, 6, 7, 8})))
+		decrypt, _ := s.decryptors(restored, -100, 100)
+		if got, ok := decrypt(sk, ct); got != 46 || !ok {
+			t.Errorf("got (%d, %v), want (46, true)", got, ok)
+		}
+		rejectsTruncated(t, msk)
+		rejectsTruncated(t, sk)
+		rejectsTruncated(t, ct)
+	})
+
 	t.Run("ThreadsShareOneKeyAndTable", func(t *testing.T) {
-		msk := s.setup(4)
+		msk := must(s.setup(4))
 		decrypt, decryptPrepared := s.decryptors(msk, -100, 100)
 		sk := must(s.keyGen(msk, []int64{1, -2, 3, 4}))
 		prepared := s.prepare(sk)

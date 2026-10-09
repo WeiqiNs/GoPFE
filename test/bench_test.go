@@ -55,7 +55,7 @@ func BenchmarkQuadratic(b *testing.B) { benchmarkSchemes(b, quadraticSchemes) }
 
 func (s innerProduct[M, K, P, C]) benchmark(b *testing.B, n int) {
 	x, y, want := innerProductSample(n)
-	msk := s.setup(n)
+	msk := must(s.setup(n))
 	sk, ct := must(s.keyGen(msk, y)), must(s.encrypt(msk, x))
 	decrypt, decryptPrepared := s.decryptors(msk, 0, bound)
 	prepared := s.prepare(sk)
@@ -107,7 +107,7 @@ func (s innerProduct[M, K, P, C]) benchmark(b *testing.B, n int) {
 
 func (s quadratic[PK, M, K, P, C]) benchmark(b *testing.B, n int) {
 	x, y, f, want := quadraticSample(n)
-	pk, msk := s.setup(n)
+	pk, msk := s.mustSetup(n)
 	sk, ct := must(s.keyGen(msk, f)), must(s.encrypt(pk, x, y))
 	decrypt, decryptPrepared := s.decryptors(pk, 0, bound)
 	prepared := s.prepare(sk)

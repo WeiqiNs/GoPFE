@@ -42,7 +42,7 @@ NeurIPS paper by Ryffel, Dufour-Sans, Gay, Bach and Pointcheval.
 ## Usage
 
 ```go
-msk := opt.Setup(3)
+msk, err := opt.Setup(3)
 table := group.NewDlogTable(opt.Base(), -1000, 1000)
 sk, err := opt.KeyGen(msk, []int64{1, 2, 3})
 ct, err := opt.Encrypt(msk, []int64{4, -5, 6})
@@ -52,16 +52,17 @@ sameResult, ok := opt.Decrypt(table, prepared, ct)
 ```
 
 ```go
-pk, msk := sgp.Setup(2)
+pk, msk, err := sgp.Setup(2)
 table := group.NewDlogTable(sgp.Base(), -1000, 1000)
 sk, err := sgp.KeyGen(msk, [][]int64{{1, 2}, {0, -1}})
 ct, err := sgp.Encrypt(pk, []int64{3, 4}, []int64{5, -6})
 result, ok := sgp.Decrypt(table, sk, ct)
 ```
 
-`KeyGen` and `Encrypt` return an error wrapping `group.ErrShape` when an input has the wrong length or shape.
+`Setup` returns an error wrapping `group.ErrShape` when n is below 1, and `KeyGen` and `Encrypt` return one when an
+input has the wrong length or shape.
 `Decrypt` returns the result and `true`, or `false` when it falls outside the searched range. Schemes with a
-fixed-base `Decrypt` take a `group.DlogTable` built once for a range (over `msk.Base` for Tomida et al. and `Base()`
+fixed-base `Decrypt` take a `group.DlogTable` built once for a range (over `msk.Base()` for Tomida et al. and `Base()`
 for the others) and reused across decryptions; Bishop et al. and Kim et al. derive the base from each key and
 ciphertext, so their `Decrypt` takes the bounds instead.
 
@@ -85,6 +86,19 @@ The `group` package wraps gnark-crypto's BLS12-381 with the operations the schem
 vectors and matrices over Zp, multi-pairings and baby-step giant-step discrete logarithms. Multiples of the G1 and G2
 generators come from fixed-base tables built on first use, and a vector of them is split across cores like the
 operations above.
+
+### Serialization
+
+Every scheme's `MasterKey`, `Key` and `Ciphertext`, and the QFE schemes' `PublicKey`, implement
+`encoding.BinaryMarshaler` and `encoding.BinaryUnmarshaler`. An encoding is the dimension n as a 4-byte big-endian
+integer followed by the fields in the order of the type's declaration in its package, with no other framing: a Zp
+element is 32 big-endian bytes, a G1 point 48 and a G2 point 96 bytes in compressed form, and vectors, lists of points
+and row-major matrices are their entries back to back, with every length derived from n. `UnmarshalBinary` checks that
+n is at least 1, that every scalar is below the group order, that every point is on the curve and in the prime-order
+subgroup and that no bytes are missing or left over. It returns an error wrapping `group.ErrShape` or one of the
+sentinels in `group/encoding.go`, which `errors.Is` matches, and leaves the receiver unchanged. An encoding carries no
+type tag, so decode data with the type that encoded it. A `PreparedKey` and a `group.DlogTable` have no encoding;
+re-derive them with `Prepare` and `NewDlogTable`.
 
 ## Benchmarks
 

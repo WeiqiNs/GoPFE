@@ -1,6 +1,9 @@
 package test
 
 import (
+	"bytes"
+	"encoding"
+	"errors"
 	"sync"
 	"testing"
 
@@ -25,18 +28,18 @@ type decryptor[K, C any] func(K, C) (int64, bool)
 
 type decryptors[S, K, P, C any] func(S, int64, int64) (decryptor[K, C], decryptor[P, C])
 
-type innerProduct[M, K, P, C any] struct {
+type innerProduct[M, K encoding.BinaryMarshaler, P any, C encoding.BinaryMarshaler] struct {
 	name       string
-	setup      func(int) M
+	setup      func(int) (M, error)
 	keyGen     func(M, []int64) (K, error)
 	encrypt    func(M, []int64) (C, error)
 	prepare    func(K) P
 	decryptors decryptors[M, K, P, C]
 }
 
-type quadratic[PK, M, K, P, C any] struct {
+type quadratic[PK, M, K encoding.BinaryMarshaler, P any, C encoding.BinaryMarshaler] struct {
 	name       string
-	setup      func(int) (PK, M)
+	setup      func(int) (PK, M, error)
 	keyGen     func(M, [][]int64) (K, error)
 	encrypt    func(PK, []int64, []int64) (C, error)
 	prepare    func(K) P
@@ -75,6 +78,30 @@ func must[T any](v T, err error) T {
 	return v
 }
 
+func decode[T any](data []byte) (T, error) {
+	var v T
+	err := any(&v).(encoding.BinaryUnmarshaler).UnmarshalBinary(data)
+	return v, err
+}
+
+func roundTrip[T encoding.BinaryMarshaler](t *testing.T, v T) T {
+	t.Helper()
+	data := must(v.MarshalBinary())
+	restored := must(decode[T](data))
+	if again := must(restored.MarshalBinary()); !bytes.Equal(again, data) {
+		t.Errorf("%T encodes differently after a round trip", v)
+	}
+	return restored
+}
+
+func rejectsTruncated[T encoding.BinaryMarshaler](t *testing.T, v T) {
+	t.Helper()
+	data := must(v.MarshalBinary())
+	if _, err := decode[T](data[:len(data)-1]); !errors.Is(err, group.ErrTruncated) {
+		t.Errorf("%T without its last byte: got %v, want ErrTruncated", v, err)
+	}
+}
+
 var innerProductSchemes = []scheme{
 	innerProduct[bjk.MasterKey, bjk.Key, bjk.PreparedKey, bjk.Ciphertext]{
 		name: "Bishop et al.", setup: bjk.Setup, keyGen: bjk.KeyGen, encrypt: bjk.Encrypt, prepare: bjk.Prepare,
@@ -82,9 +109,7 @@ var innerProductSchemes = []scheme{
 	},
 	innerProduct[tao.MasterKey, tao.Key, tao.PreparedKey, tao.Ciphertext]{
 		name: "Tomida et al.", setup: tao.Setup, keyGen: tao.KeyGen, encrypt: tao.Encrypt, prepare: tao.Prepare,
-		decryptors: tableDecryptors(
-			func(msk tao.MasterKey) group.GT { return msk.Base }, tao.Decrypt[tao.Key], tao.Decrypt[tao.PreparedKey],
-		),
+		decryptors: tableDecryptors(tao.MasterKey.Base, tao.Decrypt[tao.Key], tao.Decrypt[tao.PreparedKey]),
 	},
 	innerProduct[kim.MasterKey, kim.Key, kim.PreparedKey, kim.Ciphertext]{
 		name: "Kim et al.", setup: kim.Setup, keyGen: kim.KeyGen, encrypt: kim.Encrypt, prepare: kim.Prepare,

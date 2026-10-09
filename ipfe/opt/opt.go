@@ -3,25 +3,27 @@ package opt
 import "github.com/WeiqiNs/GoPFE/group"
 
 type MasterKey struct {
-	N  int
-	A  group.Matrix
-	B  group.Matrix
-	Bi group.Matrix
+	n  int
+	a  group.Matrix
+	b  group.Matrix
+	bi group.Matrix
 }
 
 type Key struct {
-	R   []group.G2
-	Vec []group.G2
+	n   int
+	r   []group.G2
+	vec []group.G2
 }
 
 type Ciphertext struct {
-	R   []group.G1
-	Vec []group.G1
+	n   int
+	r   []group.G1
+	vec []group.G1
 }
 
 type PreparedKey struct {
-	R   group.Prepared
-	Vec group.Prepared
+	r   group.Prepared
+	vec group.Prepared
 }
 
 type DecryptionKey interface {
@@ -29,9 +31,12 @@ type DecryptionKey interface {
 	sides() (r, vec group.G2Side)
 }
 
-func Setup(n int) MasterKey {
+func Setup(n int) (MasterKey, error) {
+	if err := group.CheckDimension(n); err != nil {
+		return MasterKey{}, err
+	}
 	b, inverse, _ := group.RandomInvertible(4)
-	return MasterKey{N: n, A: group.RandomMatrix(2, n), B: b, Bi: inverse.Transpose()}
+	return MasterKey{n: n, a: group.RandomMatrix(2, n), b: b, bi: inverse.Transpose()}, nil
 }
 
 func Base() group.GT {
@@ -39,46 +44,91 @@ func Base() group.GT {
 }
 
 func KeyGen(msk MasterKey, function []int64) (Key, error) {
-	f, err := group.IntVector(function, msk.N)
+	f, err := group.IntVector(function, msk.n)
 	if err != nil {
 		return Key{}, err
 	}
 	s := group.RandomVector(2)
-	masked := s.MulMat(msk.A).Plus(f)
+	masked := s.MulMat(msk.a).Plus(f)
 	return Key{
-		R:   group.G2MulVec(msk.B.MulVec(group.Concat(s, msk.A.MulVec(masked)))),
-		Vec: group.G2MulVec(masked),
+		n:   msk.n,
+		r:   group.G2MulVec(msk.b.MulVec(group.Concat(s, msk.a.MulVec(masked)))),
+		vec: group.G2MulVec(masked),
 	}, nil
 }
 
 func Encrypt(msk MasterKey, message []int64) (Ciphertext, error) {
-	m, err := group.IntVector(message, msk.N)
+	m, err := group.IntVector(message, msk.n)
 	if err != nil {
 		return Ciphertext{}, err
 	}
 	s := group.RandomVector(2)
 	return Ciphertext{
-		R:   group.G1MulVec(msk.Bi.MulVec(group.Concat(msk.A.MulVec(m), s))),
-		Vec: group.G1MulVec(s.MulMat(msk.A).Plus(m)),
+		n:   msk.n,
+		r:   group.G1MulVec(msk.bi.MulVec(group.Concat(msk.a.MulVec(m), s))),
+		vec: group.G1MulVec(s.MulMat(msk.a).Plus(m)),
 	}, nil
 }
 
 func Prepare(sk Key) PreparedKey {
-	return PreparedKey{R: group.Prepare(sk.R), Vec: group.Prepare(sk.Vec)}
+	return PreparedKey{r: group.Prepare(sk.r), vec: group.Prepare(sk.vec)}
 }
 
 func Decrypt[K DecryptionKey](table *group.DlogTable, sk K, ct Ciphertext) (int64, bool) {
 	r, vec := sk.sides()
 	var e group.PairingProduct
-	e.Mul(ct.Vec, vec)
-	e.Div(ct.R, r)
+	e.Mul(ct.vec, vec)
+	e.Div(ct.r, r)
 	return table.Find(e.Value())
 }
 
 func (sk Key) sides() (r, vec group.G2Side) {
-	return group.Affine(sk.R), group.Affine(sk.Vec)
+	return group.Affine(sk.r), group.Affine(sk.vec)
 }
 
 func (sk PreparedKey) sides() (r, vec group.G2Side) {
-	return sk.R, sk.Vec
+	return sk.r, sk.vec
+}
+
+func (msk MasterKey) MarshalBinary() ([]byte, error) {
+	return group.NewEncoder(msk.n).Matrix(msk.a).Matrix(msk.b).Matrix(msk.bi).Bytes(), nil
+}
+
+func (msk *MasterKey) UnmarshalBinary(data []byte) error {
+	return group.Decode(data, msk, func(dec *group.Decoder, n int) MasterKey {
+		return MasterKey{
+			n:  n,
+			a:  dec.Matrix(2, n),
+			b:  dec.Matrix(4, 4),
+			bi: dec.Matrix(4, 4),
+		}
+	})
+}
+
+func (sk Key) MarshalBinary() ([]byte, error) {
+	return group.NewEncoder(sk.n).G2s(sk.r).G2s(sk.vec).Bytes(), nil
+}
+
+func (sk *Key) UnmarshalBinary(data []byte) error {
+	return group.Decode(data, sk, func(dec *group.Decoder, n int) Key {
+		return Key{
+			n:   n,
+			r:   dec.G2s(4),
+			vec: dec.G2s(n),
+		}
+	})
+}
+
+func (ct Ciphertext) MarshalBinary() ([]byte, error) {
+	return group.NewEncoder(ct.n).G1s(ct.r).G1s(ct.vec).Bytes(), nil
+}
+
+func (ct *Ciphertext) UnmarshalBinary(data []byte) error {
+	return group.Decode(data, ct, func(dec *group.Decoder, n int) Ciphertext {
+		return Ciphertext{
+			n:   n,
+			r:   dec.G1s(4),
+			vec: dec.G1s(n),
+		}
+	})
 }

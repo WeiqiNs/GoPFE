@@ -9,6 +9,14 @@ import (
 
 func (s quadratic[PK, M, K, P, C]) schemeName() string { return s.name }
 
+func (s quadratic[PK, M, K, P, C]) mustSetup(n int) (PK, M) {
+	pk, msk, err := s.setup(n)
+	if err != nil {
+		panic(err)
+	}
+	return pk, msk
+}
+
 func TestQuadratic(t *testing.T) {
 	for _, s := range quadraticSchemes {
 		t.Run(s.schemeName(), s.test)
@@ -19,7 +27,7 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 	f := [][]int64{{1, 0, 2}, {0, -1, 0}, {3, 1, 1}}
 
 	t.Run("DecryptsQuadraticFormsExactlyWithinTheRange", func(t *testing.T) {
-		pk, msk := s.setup(3)
+		pk, msk := s.mustSetup(3)
 		decrypt, decryptPrepared := s.decryptors(pk, -100, 100)
 		sk := must(s.keyGen(msk, f))
 		prepared := s.prepare(sk)
@@ -48,7 +56,7 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 	})
 
 	t.Run("DecryptsOneCiphertextUnderManyKeys", func(t *testing.T) {
-		pk, msk := s.setup(3)
+		pk, msk := s.mustSetup(3)
 		decrypt, _ := s.decryptors(pk, -100, 100)
 		ct := must(s.encrypt(pk, []int64{1, -2, 3}, []int64{4, 5, -6}))
 		cases := []struct {
@@ -67,7 +75,7 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 	})
 
 	t.Run("HandlesVectorsOfLengthOne", func(t *testing.T) {
-		pk, msk := s.setup(1)
+		pk, msk := s.mustSetup(1)
 		decrypt, _ := s.decryptors(pk, -100, 100)
 		ct := must(s.encrypt(pk, []int64{7}, []int64{2}))
 		if got, ok := decrypt(must(s.keyGen(msk, [][]int64{{-3}})), ct); got != -42 || !ok {
@@ -75,8 +83,14 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 		}
 	})
 
+	t.Run("RejectsDimensionsBelowOne", func(t *testing.T) {
+		if _, _, err := s.setup(0); !errors.Is(err, group.ErrShape) {
+			t.Errorf("setup(0): got %v, want ErrShape", err)
+		}
+	})
+
 	t.Run("RejectsInputsOfTheWrongShape", func(t *testing.T) {
-		pk, msk := s.setup(3)
+		pk, msk := s.mustSetup(3)
 		for _, f := range [][][]int64{{{1, 2}, {3, 4}, {5, 6}}, {{1, 2}, {3, 4}}} {
 			if _, err := s.keyGen(msk, f); !errors.Is(err, group.ErrShape) {
 				t.Errorf("keyGen(%v): got %v, want ErrShape", f, err)
@@ -89,8 +103,23 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 		}
 	})
 
+	t.Run("EncodingsRoundTripAndDecrypt", func(t *testing.T) {
+		pk, msk := s.mustSetup(3)
+		restoredPK, restoredMSK := roundTrip(t, pk), roundTrip(t, msk)
+		sk := roundTrip(t, must(s.keyGen(restoredMSK, f)))
+		ct := roundTrip(t, must(s.encrypt(restoredPK, []int64{1, -2, 3}, []int64{4, 5, -6})))
+		decrypt, _ := s.decryptors(restoredPK, -100, 100)
+		if got, ok := decrypt(sk, ct); got != 35 || !ok {
+			t.Errorf("got (%d, %v), want (35, true)", got, ok)
+		}
+		rejectsTruncated(t, pk)
+		rejectsTruncated(t, msk)
+		rejectsTruncated(t, sk)
+		rejectsTruncated(t, ct)
+	})
+
 	t.Run("ThreadsShareOneKeyAndTable", func(t *testing.T) {
-		pk, msk := s.setup(3)
+		pk, msk := s.mustSetup(3)
 		decrypt, decryptPrepared := s.decryptors(pk, -100, 100)
 		sk := must(s.keyGen(msk, f))
 		prepared := s.prepare(sk)

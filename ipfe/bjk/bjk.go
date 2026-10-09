@@ -3,26 +3,28 @@ package bjk
 import "github.com/WeiqiNs/GoPFE/group"
 
 type MasterKey struct {
-	N  int
-	B  group.Matrix
-	Bi group.Matrix
-	D  group.Matrix
-	Di group.Matrix
+	n  int
+	b  group.Matrix
+	bi group.Matrix
+	d  group.Matrix
+	di group.Matrix
 }
 
 type Key struct {
-	R   []group.G2
-	Vec []group.G2
+	n   int
+	r   []group.G2
+	vec []group.G2
 }
 
 type Ciphertext struct {
-	R   []group.G1
-	Vec []group.G1
+	n   int
+	r   []group.G1
+	vec []group.G1
 }
 
 type PreparedKey struct {
-	R   group.Prepared
-	Vec group.Prepared
+	r   group.Prepared
+	vec group.Prepared
 }
 
 type DecryptionKey interface {
@@ -30,51 +32,100 @@ type DecryptionKey interface {
 	sides() (r, vec group.G2Side)
 }
 
-func Setup(n int) MasterKey {
+func Setup(n int) (MasterKey, error) {
+	if err := group.CheckDimension(n); err != nil {
+		return MasterKey{}, err
+	}
 	b, bInverse, _ := group.RandomInvertible(2*n + 4)
 	d, dInverse, _ := group.RandomInvertible(2)
-	return MasterKey{N: n, B: b, Bi: bInverse.Transpose(), D: d, Di: dInverse.Transpose()}
+	return MasterKey{n: n, b: b, bi: bInverse.Transpose(), d: d, di: dInverse.Transpose()}, nil
 }
 
 func KeyGen(msk MasterKey, function []int64) (Key, error) {
-	f, err := group.IntVector(function, msk.N)
+	f, err := group.IntVector(function, msk.n)
 	if err != nil {
 		return Key{}, err
 	}
 	beta, betaT := group.RandomZp(), group.RandomZp()
 	encoded := group.Concat(f.Scale(beta), f.Scale(betaT), group.Vector{{}, beta, {}, betaT})
 	return Key{
-		R:   group.G2MulVec(group.Vector{beta, betaT}.MulMat(msk.D)),
-		Vec: group.G2MulVec(encoded.MulMat(msk.B)),
+		n:   msk.n,
+		r:   group.G2MulVec(group.Vector{beta, betaT}.MulMat(msk.d)),
+		vec: group.G2MulVec(encoded.MulMat(msk.b)),
 	}, nil
 }
 
 func Encrypt(msk MasterKey, message []int64) (Ciphertext, error) {
-	m, err := group.IntVector(message, msk.N)
+	m, err := group.IntVector(message, msk.n)
 	if err != nil {
 		return Ciphertext{}, err
 	}
 	alpha, alphaT := group.RandomZp(), group.RandomZp()
 	encoded := group.Concat(m.Scale(alpha), m.Scale(alphaT), group.Vector{alpha, {}, alphaT, {}})
 	return Ciphertext{
-		R:   group.G1MulVec(group.Vector{alpha, alphaT}.MulMat(msk.Di)),
-		Vec: group.G1MulVec(encoded.MulMat(msk.Bi)),
+		n:   msk.n,
+		r:   group.G1MulVec(group.Vector{alpha, alphaT}.MulMat(msk.di)),
+		vec: group.G1MulVec(encoded.MulMat(msk.bi)),
 	}, nil
 }
 
 func Prepare(sk Key) PreparedKey {
-	return PreparedKey{R: group.Prepare(sk.R), Vec: group.Prepare(sk.Vec)}
+	return PreparedKey{r: group.Prepare(sk.r), vec: group.Prepare(sk.vec)}
 }
 
 func Decrypt[K DecryptionKey](sk K, ct Ciphertext, lo, hi int64) (int64, bool) {
 	r, vec := sk.sides()
-	return group.Dlog(group.Pair(ct.R, r), group.Pair(ct.Vec, vec), lo, hi)
+	return group.Dlog(group.Pair(ct.r, r), group.Pair(ct.vec, vec), lo, hi)
 }
 
 func (sk Key) sides() (r, vec group.G2Side) {
-	return group.Affine(sk.R), group.Affine(sk.Vec)
+	return group.Affine(sk.r), group.Affine(sk.vec)
 }
 
 func (sk PreparedKey) sides() (r, vec group.G2Side) {
-	return sk.R, sk.Vec
+	return sk.r, sk.vec
+}
+
+func (msk MasterKey) MarshalBinary() ([]byte, error) {
+	return group.NewEncoder(msk.n).Matrix(msk.b).Matrix(msk.bi).Matrix(msk.d).Matrix(msk.di).Bytes(), nil
+}
+
+func (msk *MasterKey) UnmarshalBinary(data []byte) error {
+	return group.Decode(data, msk, func(dec *group.Decoder, n int) MasterKey {
+		return MasterKey{
+			n:  n,
+			b:  dec.Matrix(2*n+4, 2*n+4),
+			bi: dec.Matrix(2*n+4, 2*n+4),
+			d:  dec.Matrix(2, 2),
+			di: dec.Matrix(2, 2),
+		}
+	})
+}
+
+func (sk Key) MarshalBinary() ([]byte, error) {
+	return group.NewEncoder(sk.n).G2s(sk.r).G2s(sk.vec).Bytes(), nil
+}
+
+func (sk *Key) UnmarshalBinary(data []byte) error {
+	return group.Decode(data, sk, func(dec *group.Decoder, n int) Key {
+		return Key{
+			n:   n,
+			r:   dec.G2s(2),
+			vec: dec.G2s(2*n + 4),
+		}
+	})
+}
+
+func (ct Ciphertext) MarshalBinary() ([]byte, error) {
+	return group.NewEncoder(ct.n).G1s(ct.r).G1s(ct.vec).Bytes(), nil
+}
+
+func (ct *Ciphertext) UnmarshalBinary(data []byte) error {
+	return group.Decode(data, ct, func(dec *group.Decoder, n int) Ciphertext {
+		return Ciphertext{
+			n:   n,
+			r:   dec.G1s(2),
+			vec: dec.G1s(2*n + 4),
+		}
+	})
 }

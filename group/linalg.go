@@ -25,6 +25,13 @@ func mustMatch(a, b int) {
 	}
 }
 
+func CheckDimension(n int) error {
+	if n < 1 {
+		return fmt.Errorf("%w: dimension %d is below 1", ErrShape, n)
+	}
+	return nil
+}
+
 func Zeros(n int) Vector {
 	return make(Vector, n)
 }

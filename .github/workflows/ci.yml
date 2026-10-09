@@ -40,6 +40,9 @@ jobs:
       - name: Run tests
         run: go test -race -count=1 -coverpkg=./... -coverprofile=coverage.out ./...
 
+      - name: Run tests on 32-bit
+        run: GOARCH=386 go test -count=1 ./...
+
       - name: Enforce 100% statement coverage
         run: go tool cover -func=coverage.out | awk '/^total:/ { print; if ($3 != "100.0%") exit 1 }'
 
