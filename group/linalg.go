@@ -4,15 +4,19 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+
+	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 )
 
 var ErrShape = errors.New("group: input has the wrong shape")
+
+const rowsPerTask = 32
 
 type Vector []Zp
 
 type Matrix struct {
 	rows, cols int
-	data       []Zp
+	data       fr.Vector
 }
 
 func mustMatch(a, b int) {
@@ -27,9 +31,7 @@ func Zeros(n int) Vector {
 
 func RandomVector(n int) Vector {
 	v := make(Vector, n)
-	for i := range v {
-		v[i] = RandomZp()
-	}
+	fr.Vector(v).MustSetRandom()
 	return v
 }
 
@@ -50,39 +52,29 @@ func Concat(vs ...Vector) Vector {
 
 func (v Vector) Plus(w Vector) Vector {
 	mustMatch(len(v), len(w))
-	r := make(Vector, len(v))
-	for i := range v {
-		r[i] = Add(v[i], w[i])
-	}
-	return r
+	r := make(fr.Vector, len(v))
+	r.Add(fr.Vector(v), fr.Vector(w))
+	return Vector(r)
 }
 
 func (v Vector) Scale(k Zp) Vector {
-	r := make(Vector, len(v))
-	for i := range v {
-		r[i] = Mul(v[i], k)
-	}
-	return r
+	r := make(fr.Vector, len(v))
+	r.ScalarMul(fr.Vector(v), &k)
+	return Vector(r)
 }
 
 func Inner(v, w Vector) Zp {
 	mustMatch(len(v), len(w))
-	var total Zp
-	for i := range v {
-		total = Add(total, Mul(v[i], w[i]))
-	}
-	return total
+	return (*fr.Vector)(&v).InnerProduct(fr.Vector(w))
 }
 
 func NewMatrix(rows, cols int) Matrix {
-	return Matrix{rows: rows, cols: cols, data: make([]Zp, rows*cols)}
+	return Matrix{rows: rows, cols: cols, data: make(fr.Vector, rows*cols)}
 }
 
 func RandomMatrix(rows, cols int) Matrix {
 	m := NewMatrix(rows, cols)
-	for i := range m.data {
-		m.data[i] = RandomZp()
-	}
+	m.data.MustSetRandom()
 	return m
 }
 
@@ -96,7 +88,7 @@ func IntMatrix(rows [][]int64, n int) (Matrix, error) {
 		if err != nil {
 			return Matrix{}, err
 		}
-		copy(m.data[i*n:], v)
+		copy(m.row(i), v)
 	}
 	return m, nil
 }
@@ -113,6 +105,8 @@ func RandomInvertible(n int) (m, inverse Matrix, det Zp) {
 func (m Matrix) At(i, j int) Zp { return m.data[i*m.cols+j] }
 
 func (m Matrix) set(i, j int, z Zp) { m.data[i*m.cols+j] = z }
+
+func (m Matrix) row(i int) fr.Vector { return m.data[i*m.cols : (i+1)*m.cols] }
 
 func (m Matrix) Column(j int) Vector {
 	v := make(Vector, m.rows)
@@ -134,9 +128,7 @@ func (m Matrix) Transpose() Matrix {
 
 func (m Matrix) Scale(k Zp) Matrix {
 	r := NewMatrix(m.rows, m.cols)
-	for i, z := range m.data {
-		r.data[i] = Mul(z, k)
-	}
+	r.data.ScalarMul(m.data, &k)
 	return r
 }
 
@@ -144,27 +136,26 @@ func (m Matrix) MulVec(v Vector) Vector {
 	mustMatch(m.cols, len(v))
 	r := make(Vector, m.rows)
 	for i := range r {
-		r[i] = Inner(m.data[i*m.cols:(i+1)*m.cols], v)
+		r[i] = Inner(Vector(m.row(i)), v)
 	}
 	return r
 }
 
 func (v Vector) MulMat(m Matrix) Vector {
 	mustMatch(len(v), m.rows)
-	r := make(Vector, m.cols)
-	for i, vi := range v {
-		for j := range r {
-			r[j] = Add(r[j], Mul(vi, m.At(i, j)))
-		}
+	r, scaled := make(fr.Vector, m.cols), make(fr.Vector, m.cols)
+	for i := range v {
+		scaled.ScalarMul(m.row(i), &v[i])
+		r.Add(r, scaled)
 	}
-	return r
+	return Vector(r)
 }
 
 func (m Matrix) invert() (Matrix, Zp, bool) {
 	n := m.rows
 	work := NewMatrix(n, 2*n)
 	for i := range n {
-		copy(work.data[i*2*n:], m.data[i*n:(i+1)*n])
+		copy(work.row(i), m.row(i))
 		work.set(i, n+i, NewZp(1))
 	}
 	det := NewZp(1)
@@ -185,30 +176,31 @@ func (m Matrix) invert() (Matrix, Zp, bool) {
 		}
 		det = Mul(det, work.At(col, col))
 		scale := Inverse(work.At(col, col))
-		for j := col; j < 2*n; j++ {
-			work.set(col, j, Mul(work.At(col, j), scale))
-		}
-		for i := range n {
-			factor := work.At(i, col)
-			if i == col || factor.IsZero() {
-				continue
+		pivotRow := work.row(col)[col:]
+		pivotRow.ScalarMul(pivotRow, &scale)
+		parallelize(n, rowsPerTask, func(lo, hi int) {
+			scaled := make(fr.Vector, len(pivotRow))
+			for i := lo; i < hi; i++ {
+				if i == col {
+					continue
+				}
+				factor := work.At(i, col)
+				row := work.row(i)[col:]
+				scaled.ScalarMul(pivotRow, &factor)
+				row.Sub(row, scaled)
 			}
-			for j := col; j < 2*n; j++ {
-				work.set(i, j, Sub(work.At(i, j), Mul(factor, work.At(col, j))))
-			}
-		}
+		})
 	}
 	inverse := NewMatrix(n, n)
 	for i := range n {
-		copy(inverse.data[i*n:], work.data[i*2*n+n:(i+1)*2*n])
+		copy(inverse.row(i), work.row(i)[n:])
 	}
 	return inverse, det, true
 }
 
 func (m Matrix) swapRows(a, b int) {
-	for j := range m.cols {
-		x, y := m.At(a, j), m.At(b, j)
-		m.set(a, j, y)
-		m.set(b, j, x)
+	ra, rb := m.row(a), m.row(b)
+	for j := range ra {
+		ra[j], rb[j] = rb[j], ra[j]
 	}
 }

@@ -88,4 +88,19 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("ThreadsShareOneKeyAndTable", func(t *testing.T) {
+		pk, msk := s.setup(3)
+		decrypt, decryptPrepared := s.decryptors(pk, -100, 100)
+		sk := must(s.keyGen(msk, f))
+		prepared := s.prepare(sk)
+		var cts []C
+		var want []int64
+		for k := range int64(8) {
+			cts = append(cts, must(s.encrypt(pk, []int64{k, 1, 0}, []int64{1, k, -1})))
+			want = append(want, -2*k)
+		}
+		decryptConcurrently(t, decrypt, sk, cts, want)
+		decryptConcurrently(t, decryptPrepared, prepared, cts, want)
+	})
 }

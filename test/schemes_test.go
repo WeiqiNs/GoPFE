@@ -1,6 +1,7 @@
 package test
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/WeiqiNs/GoPFE/group"
@@ -122,4 +123,28 @@ var quadraticSchemes = []scheme{
 			generatorBase[sgp.PublicKey](sgp.Base), sgp.Decrypt[sgp.Key], sgp.Decrypt[sgp.PreparedKey],
 		),
 	},
+}
+
+func decryptConcurrently[K, C any](t *testing.T, decrypt decryptor[K, C], key K, cts []C, want []int64) {
+	t.Helper()
+	type result struct {
+		value int64
+		ok    bool
+	}
+	results := make([]result, len(cts))
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i, ct := range cts {
+		wg.Go(func() {
+			<-start
+			results[i].value, results[i].ok = decrypt(key, ct)
+		})
+	}
+	close(start)
+	wg.Wait()
+	for i, r := range results {
+		if r.value != want[i] || !r.ok {
+			t.Errorf("ciphertext %d: got (%d, %v), want (%d, true)", i, r.value, r.ok, want[i])
+		}
+	}
 }

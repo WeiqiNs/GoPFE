@@ -95,6 +95,14 @@ func (s innerProduct[M, K, P, C]) benchmark(b *testing.B, n int) {
 			decryptPrepared(prepared, ct)
 		}
 	})
+	b.Run("PreparedDecParallel", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				decryptPrepared(prepared, ct)
+			}
+		})
+		b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "dec/s")
+	})
 }
 
 func (s quadratic[PK, M, K, P, C]) benchmark(b *testing.B, n int) {
@@ -138,5 +146,13 @@ func (s quadratic[PK, M, K, P, C]) benchmark(b *testing.B, n int) {
 		for b.Loop() {
 			decryptPrepared(prepared, ct)
 		}
+	})
+	b.Run("PreparedDecParallel", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				decryptPrepared(prepared, ct)
+			}
+		})
+		b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "dec/s")
 	})
 }

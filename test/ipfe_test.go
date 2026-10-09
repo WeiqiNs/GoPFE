@@ -83,4 +83,19 @@ func (s innerProduct[M, K, P, C]) test(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("ThreadsShareOneKeyAndTable", func(t *testing.T) {
+		msk := s.setup(4)
+		decrypt, decryptPrepared := s.decryptors(msk, -100, 100)
+		sk := must(s.keyGen(msk, []int64{1, -2, 3, 4}))
+		prepared := s.prepare(sk)
+		var cts []C
+		var want []int64
+		for k := range int64(8) {
+			cts = append(cts, must(s.encrypt(msk, []int64{k, 1, -k, 2})))
+			want = append(want, 6-2*k)
+		}
+		decryptConcurrently(t, decrypt, sk, cts, want)
+		decryptConcurrently(t, decryptPrepared, prepared, cts, want)
+	})
 }

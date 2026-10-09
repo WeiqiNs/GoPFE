@@ -68,68 +68,78 @@ ciphertext, so their `Decrypt` takes the bounds instead.
 Every scheme also has `Prepare(sk)`, which precomputes the key's pairing lines once (gnark-crypto's `PrecomputeLines`)
 and returns a `PreparedKey`. `Decrypt` accepts either a `Key` or a `PreparedKey`, the two types its `DecryptionKey`
 constraint lists, and returns the same result for both. An IPFE key is all of its decryption's G2 side, so its prepared
-`Decrypt` costs about three fifths to three quarters of `Decrypt` with the key; prepare a key that will decrypt many
+`Decrypt` costs about two thirds to four fifths of `Decrypt` with the key; prepare a key that will decrypt many
 ciphertexts. A QFE decryption also pairs the ciphertext's own G2 points, which no key can prepare, so a prepared Baltico
-et al. key saves less, and a prepared Dufour-Sans et al. key, which fixes one G2 point, decrypts in about the time of
-the plain key. A prepared key holds about 24 KB per G2 point.
+et al. key saves about a tenth on one core and up to a few percent on all cores, and a prepared Dufour-Sans et al. key,
+which fixes one G2 point, decrypts in about the time of the plain key. A prepared key holds about 24 KB per G2 point.
+
+Keys, prepared keys, master and public keys and `group.DlogTable`s are never modified after they are built, so any
+number of goroutines may decrypt different ciphertexts with them at once. Each `Decrypt` builds its own
+`group.PairingProduct`, which belongs to the goroutine that built it. Operations also split their own work across up to
+`GOMAXPROCS` goroutines. Multi-pairings, `Prepare`, generator multiples and masked multiples split into tasks of
+`pointsPerTask` points and matrix inversion into tasks of `rowsPerTask` rows, so smaller inputs stay on the calling
+goroutine; a quadratic-form decryption gives each column of its bilinear form a task of its own. Results do not depend
+on the split, and `GOMAXPROCS` (or `go test -cpu`) bounds the cores used.
 
 The `group` package wraps gnark-crypto's BLS12-381 with the operations the schemes need: `Zp`, `G1`, `G2` and `GT`,
-vectors and matrices over Zp, multi-scalar multiplication, multi-pairings and baby-step giant-step discrete logarithms.
-Multiples of the G1 and G2 generators come from fixed-base tables built on first use and run on one core, unlike
-gnark-crypto's batch scalar multiplication, which spreads a large vector across cores.
+vectors and matrices over Zp, multi-pairings and baby-step giant-step discrete logarithms. Multiples of the G1 and G2
+generators come from fixed-base tables built on first use, and a vector of them is split across cores like the
+operations above.
 
 ## Benchmarks
 
 `test/bench_test.go` times every scheme with the same input sizes and bounds as LibPFE's benchmark and checks each
 decryption against the true result before timing it. Run it with `go test -run '^$' -bench . ./test`.
 
-The numbers below are milliseconds per operation on one core (`taskset -c 2` and `-cpu 1`), measured with Go 1.27 and
-gnark-crypto v0.22 on an AMD Ryzen 7 9800X3D. Inputs are random vectors (and matrices) whose results lie in [0, 10000].
-Fixed-base schemes reuse one discrete-log table, which is excluded from Dec; Bishop et al. and Kim et al. search the
-range on every decryption. Prepare is the one-time cost of `Prepare(sk)`, and Prepared Dec decrypts with the prepared
-key.
+The numbers below are milliseconds per operation on all 16 hardware threads of an AMD Ryzen 7 9800X3D, the default
+`GOMAXPROCS`, measured with Go 1.27 and gnark-crypto v0.22; add `-cpu 1` (or set `GOMAXPROCS=1`) for single-core
+numbers. Inputs are random vectors (and matrices) whose results lie in [0, 10000]. Fixed-base schemes reuse one
+discrete-log table, which is excluded from Dec; Bishop et al. and Kim et al. search the range on every decryption.
+Prepare is the one-time cost of `Prepare(sk)`, and Prepared Dec decrypts with the prepared key. Prepared Dec/s on 16
+threads is the throughput of `b.RunParallel`: `GOMAXPROCS` goroutines decrypting at once with one shared prepared key
+(and table).
 
 Inner-product FE, n = 10:
 
-| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Bishop et al. | 0.65 | 0.56 | 0.28 | 3.80 | 2.29 | 2.60 |
-| Tomida et al. | 1.13 | 0.53 | 0.26 | 2.90 | 2.20 | 1.75 |
-| Kim et al. | 0.07 | 0.24 | 0.12 | 2.22 | 0.94 | 1.72 |
-| Lin | 0.01 | 0.46 | 0.22 | 2.59 | 1.94 | 1.57 |
-| Kim, Kim and Seo | 0.01 | 0.58 | 0.28 | 3.22 | 2.58 | 1.96 |
-| Ojaswi et al. | 0.01 | 0.30 | 0.15 | 1.82 | 1.26 | 1.13 |
+| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec | Prepared Dec/s on 16 threads |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Bishop et al. | 0.27 | 0.32 | 0.17 | 2.31 | 1.36 | 1.78 | 3396 |
+| Tomida et al. | 0.52 | 0.29 | 0.16 | 1.59 | 1.24 | 1.08 | 4674 |
+| Kim et al. | 0.05 | 0.23 | 0.12 | 1.94 | 0.99 | 1.51 | 5492 |
+| Lin | 0.01 | 0.25 | 0.14 | 1.40 | 1.06 | 0.97 | 5110 |
+| Kim, Kim and Seo | 0.01 | 0.31 | 0.17 | 1.70 | 1.36 | 1.17 | 4291 |
+| Ojaswi et al. | 0.01 | 0.29 | 0.15 | 1.68 | 1.26 | 1.09 | 7672 |
 
 Inner-product FE, n = 100:
 
-| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Bishop et al. | 348.76 | 5.52 | 2.99 | 22.69 | 18.05 | 14.61 |
-| Tomida et al. | 341.95 | 5.00 | 2.89 | 21.66 | 18.28 | 14.87 |
-| Kim et al. | 41.40 | 2.31 | 1.26 | 11.80 | 8.92 | 7.50 |
-| Lin | 0.05 | 4.11 | 1.96 | 21.39 | 17.46 | 13.61 |
-| Kim, Kim and Seo | 0.09 | 6.19 | 2.53 | 22.48 | 19.35 | 13.79 |
-| Ojaswi et al. | 0.04 | 2.22 | 1.04 | 11.28 | 9.45 | 7.08 |
+| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec | Prepared Dec/s on 16 threads |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Bishop et al. | 21.15 | 0.95 | 0.55 | 4.07 | 2.66 | 2.81 | 644 |
+| Tomida et al. | 21.99 | 0.91 | 0.53 | 3.25 | 2.46 | 2.08 | 682 |
+| Kim et al. | 5.14 | 0.61 | 0.31 | 2.98 | 2.08 | 2.40 | 1220 |
+| Lin | 0.05 | 0.68 | 0.30 | 3.23 | 2.44 | 2.05 | 686 |
+| Kim, Kim and Seo | 0.09 | 0.69 | 0.31 | 3.25 | 2.55 | 2.07 | 672 |
+| Ojaswi et al. | 0.04 | 0.61 | 0.29 | 2.16 | 2.32 | 1.77 | 1293 |
 
 Quadratic FE, n = 10:
 
-| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Baltico et al. | 0.37 | 0.33 | 3.38 | 4.73 | 0.85 | 4.21 |
-| Dufour-Sans et al. | 0.32 | 0.03 | 3.51 | 4.43 | 0.08 | 4.50 |
+| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec | Prepared Dec/s on 16 threads |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baltico et al. | 0.34 | 0.33 | 3.15 | 2.62 | 0.90 | 2.45 | 1992 |
+| Dufour-Sans et al. | 0.31 | 0.02 | 3.30 | 2.00 | 0.08 | 2.08 | 1846 |
 
 Quadratic FE, n = 100:
 
-| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Baltico et al. | 3.88 | 4.82 | 38.55 | 42.97 | 8.81 | 38.04 |
-| Dufour-Sans et al. | 3.09 | 0.36 | 31.28 | 41.64 | 0.08 | 43.95 |
+| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec | Prepared Dec/s on 16 threads |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baltico et al. | 0.82 | 1.07 | 5.80 | 5.61 | 2.01 | 5.59 | 226 |
+| Dufour-Sans et al. | 0.80 | 0.21 | 6.57 | 6.43 | 0.08 | 6.42 | 198 |
 
 ## Testing
 
 ```bash
 go test ./...
-go test -coverpkg=./... -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
+go test -race -coverpkg=./... -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
 ```
 
 `test/` runs the same cases against every scheme, and CI requires 100% statement coverage.

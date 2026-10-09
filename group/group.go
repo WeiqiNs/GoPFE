@@ -2,12 +2,13 @@ package group
 
 import (
 	"math/big"
-	"slices"
+	"runtime"
 	"sync"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
+	"github.com/consensys/gnark-crypto/parallel"
 )
 
 type (
@@ -19,7 +20,9 @@ type (
 
 type Affine []G2
 
-type Prepared [][2][len(bls12381.LoopCounter) - 1]bls12381.LineEvaluationAff
+type pairingLines = [2][len(bls12381.LoopCounter) - 1]bls12381.LineEvaluationAff
+
+type Prepared []pairingLines
 
 type G2Side interface {
 	mulInto(e *PairingProduct, ps []G1)
@@ -45,9 +48,10 @@ type fixedBase[J, A any, PJ jacobian[J, A], PA affine[A]] struct {
 }
 
 const (
-	windowBits  = 8
-	windowCount = fr.Bytes
-	windowSize  = 1 << (windowBits - 1)
+	windowBits    = 8
+	windowCount   = fr.Bytes
+	windowSize    = 1 << (windowBits - 1)
+	pointsPerTask = 16
 )
 
 var g1Generator, g2Generator, gtGenerator = generators()
@@ -158,9 +162,11 @@ func (b *fixedBase[J, A, PJ, PA]) sum(z Zp) J {
 
 func (b *fixedBase[J, A, PJ, PA]) mulVec(v Vector) []A {
 	sums := make([]J, len(v))
-	for i := range v {
-		sums[i] = b.sum(v[i])
-	}
+	parallelize(len(v), pointsPerTask, func(lo, hi int) {
+		for i := lo; i < hi; i++ {
+			sums[i] = b.sum(v[i])
+		}
+	})
 	return b.normalize(sums)
 }
 
@@ -168,12 +174,14 @@ func (b *fixedBase[J, A, PJ, PA]) masked(base []A, r Zp, m Vector) []A {
 	mustMatch(len(base), len(m))
 	k := r.BigInt(new(big.Int))
 	sums := make([]J, len(base))
-	for i := range sums {
-		encoded := b.sum(m[i])
-		PJ(&sums[i]).FromAffine(&base[i])
-		PJ(&sums[i]).ScalarMultiplication(&sums[i], k)
-		PJ(&sums[i]).AddAssign(&encoded)
-	}
+	parallelize(len(sums), pointsPerTask, func(lo, hi int) {
+		for i := lo; i < hi; i++ {
+			encoded := b.sum(m[i])
+			PJ(&sums[i]).FromAffine(&base[i])
+			PJ(&sums[i]).ScalarMultiplication(&sums[i], k)
+			PJ(&sums[i]).AddAssign(&encoded)
+		}
+	})
 	return b.normalize(sums)
 }
 
@@ -232,10 +240,8 @@ func must[T any](v T, err error) T {
 	return v
 }
 
-func MSMG1(points []G1, scalars Vector) G1 {
-	var r G1
-	must(r.MultiExp(points, scalars, ecc.MultiExpConfig{}))
-	return r
+func parallelize(n, grain int, work func(lo, hi int)) {
+	parallel.Execute(n, work, min(runtime.GOMAXPROCS(0), (n+grain-1)/grain))
 }
 
 func MaskedG1(base []G1, r Zp, m Vector) []G1 {
@@ -248,9 +254,11 @@ func MaskedG2(base []G2, r Zp, m Vector) []G2 {
 
 func Prepare(qs []G2) Prepared {
 	lines := make(Prepared, len(qs))
-	for i := range qs {
-		lines[i] = bls12381.PrecomputeLines(qs[i])
-	}
+	parallelize(len(qs), pointsPerTask, func(lo, hi int) {
+		for i := lo; i < hi; i++ {
+			lines[i] = bls12381.PrecomputeLines(qs[i])
+		}
+	})
 	return lines
 }
 
@@ -268,7 +276,7 @@ type PairingProduct struct {
 	ps    []G1
 	qs    []G2
 	fixed []G1
-	lines []Prepared
+	lines []*pairingLines
 }
 
 func (qs Affine) mulInto(e *PairingProduct, ps []G1) {
@@ -280,7 +288,9 @@ func (qs Affine) mulInto(e *PairingProduct, ps []G1) {
 func (qs Prepared) mulInto(e *PairingProduct, ps []G1) {
 	mustMatch(len(ps), len(qs))
 	e.fixed = append(e.fixed, ps...)
-	e.lines = append(e.lines, qs)
+	for i := range qs {
+		e.lines = append(e.lines, &qs[i])
+	}
 }
 
 func (e *PairingProduct) Mul(ps []G1, qs G2Side) {
@@ -302,22 +312,40 @@ func (e *PairingProduct) MulBilinear(p []G1, f Matrix, q []G2) {
 func (e *PairingProduct) Value() GT {
 	var f GT
 	f.SetOne()
-	if len(e.ps) > 0 {
-		loop := must(bls12381.MillerLoop(e.ps, e.qs))
+	var mu sync.Mutex
+	plain := len(e.ps)
+	parallelize(plain+len(e.fixed), pointsPerTask, func(lo, hi int) {
+		var loop GT
+		loop.SetOne()
+		if lo < plain {
+			end := min(hi, plain)
+			partial := must(bls12381.MillerLoop(e.ps[lo:end], e.qs[lo:end]))
+			loop.Mul(&loop, &partial)
+		}
+		if hi > plain {
+			start := max(lo, plain) - plain
+			lines := make(Prepared, hi-plain-start)
+			for i := range lines {
+				lines[i] = *e.lines[start+i]
+			}
+			partial := must(bls12381.MillerLoopFixedQ(e.fixed[start:hi-plain], lines))
+			loop.Mul(&loop, &partial)
+		}
+		mu.Lock()
+		defer mu.Unlock()
 		f.Mul(&f, &loop)
-	}
-	if len(e.fixed) > 0 {
-		loop := must(bls12381.MillerLoopFixedQ(e.fixed, slices.Concat(e.lines...)))
-		f.Mul(&f, &loop)
-	}
+	})
 	return bls12381.FinalExponentiation(&f)
 }
 
 func combine(p []G1, f Matrix) []G1 {
+	mustMatch(len(p), f.rows)
 	combined := make([]G1, f.cols)
-	for j := range combined {
-		combined[j] = MSMG1(p, f.Column(j))
-	}
+	parallelize(f.cols, 1, func(lo, hi int) {
+		for j := lo; j < hi; j++ {
+			must(combined[j].MultiExp(p, f.Column(j), ecc.MultiExpConfig{NbTasks: 1}))
+		}
+	})
 	return combined
 }
 
@@ -333,6 +361,6 @@ func MulGT(x, y GT) GT {
 
 func ExpGT(x GT, k Zp) GT {
 	var z GT
-	z.Exp(x, k.BigInt(new(big.Int)))
+	z.ExpGLV(x, k.BigInt(new(big.Int)))
 	return z
 }
