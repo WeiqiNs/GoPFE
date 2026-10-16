@@ -56,7 +56,7 @@ const (
 
 var _, _, g1Generator, g2Generator = bls12381.Generators()
 
-var gtGenerator = PairOne(g1Generator, g2Generator)
+var gtGenerator = pairOne(g1Generator, g2Generator)
 
 var (
 	g1Base = lazyFixedBase(g1Generator, bls12381.BatchJacobianToAffineG1)
@@ -99,7 +99,7 @@ func Neg(x Zp) Zp {
 	return z
 }
 
-func Inverse(x Zp) Zp {
+func inverse(x Zp) Zp {
 	var z Zp
 	z.Inverse(&x)
 	return z
@@ -265,7 +265,7 @@ func Pair(ps []G1, qs G2Side) GT {
 	return e.Value()
 }
 
-func PairOne(p G1, q G2) GT {
+func pairOne(p G1, q G2) GT {
 	return Pair([]G1{p}, Affine{q})
 }
 
@@ -307,7 +307,7 @@ func (e *PairingProduct) MulBilinear(p []G1, f Matrix, q []G2) {
 	combined := make([]G1, f.cols)
 	parallelize(f.cols, 1, func(lo, hi int) {
 		for j := lo; j < hi; j++ {
-			must(combined[j].MultiExp(p, f.Column(j), ecc.MultiExpConfig{NbTasks: 1}))
+			must(combined[j].MultiExp(p, f.column(j), ecc.MultiExpConfig{NbTasks: 1}))
 		}
 	})
 	e.Mul(combined, Affine(q))
@@ -346,7 +346,7 @@ func GTGenerator() GT {
 	return gtGenerator
 }
 
-func MulGT(x, y GT) GT {
+func mulGT(x, y GT) GT {
 	var z GT
 	z.Mul(&x, &y)
 	return z

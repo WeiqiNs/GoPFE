@@ -73,12 +73,12 @@ func Inner(v, w Vector) Zp {
 	return (*fr.Vector)(&v).InnerProduct(fr.Vector(w))
 }
 
-func NewMatrix(rows, cols int) Matrix {
+func newMatrix(rows, cols int) Matrix {
 	return Matrix{rows: rows, cols: cols, data: make(fr.Vector, rows*cols)}
 }
 
 func RandomMatrix(rows, cols int) Matrix {
-	m := NewMatrix(rows, cols)
+	m := newMatrix(rows, cols)
 	m.data.MustSetRandom()
 	return m
 }
@@ -87,7 +87,7 @@ func IntMatrix(rows [][]int64, n int) (Matrix, error) {
 	if len(rows) != n {
 		return Matrix{}, fmt.Errorf("%w: got %d rows, want %d", ErrShape, len(rows), n)
 	}
-	m := NewMatrix(n, n)
+	m := newMatrix(n, n)
 	for i, row := range rows {
 		v, err := IntVector(row, n)
 		if err != nil {
@@ -113,7 +113,7 @@ func (m Matrix) set(i, j int, z Zp) { m.data[i*m.cols+j] = z }
 
 func (m Matrix) row(i int) fr.Vector { return m.data[i*m.cols : (i+1)*m.cols] }
 
-func (m Matrix) Column(j int) Vector {
+func (m Matrix) column(j int) Vector {
 	v := make(Vector, m.rows)
 	for i := range v {
 		v[i] = m.At(i, j)
@@ -122,7 +122,7 @@ func (m Matrix) Column(j int) Vector {
 }
 
 func (m Matrix) Transpose() Matrix {
-	t := NewMatrix(m.cols, m.rows)
+	t := newMatrix(m.cols, m.rows)
 	for i := range m.rows {
 		for j := range m.cols {
 			t.set(j, i, m.At(i, j))
@@ -132,7 +132,7 @@ func (m Matrix) Transpose() Matrix {
 }
 
 func (m Matrix) Scale(k Zp) Matrix {
-	r := NewMatrix(m.rows, m.cols)
+	r := newMatrix(m.rows, m.cols)
 	r.data.ScalarMul(m.data, &k)
 	return r
 }
@@ -158,7 +158,7 @@ func (v Vector) MulMat(m Matrix) Vector {
 
 func (m Matrix) invert() (Matrix, Zp, bool) {
 	n := m.rows
-	work := NewMatrix(n, 2*n)
+	work := newMatrix(n, 2*n)
 	for i := range n {
 		copy(work.row(i), m.row(i))
 		work.set(i, n+i, NewZp(1))
@@ -180,7 +180,7 @@ func (m Matrix) invert() (Matrix, Zp, bool) {
 			det = Neg(det)
 		}
 		det = Mul(det, work.At(col, col))
-		scale := Inverse(work.At(col, col))
+		scale := inverse(work.At(col, col))
 		pivotRow := work.row(col)[col:]
 		pivotRow.ScalarMul(pivotRow, &scale)
 		parallelize(n, rowsPerTask, func(lo, hi int) {
@@ -196,7 +196,7 @@ func (m Matrix) invert() (Matrix, Zp, bool) {
 			}
 		})
 	}
-	inverse := NewMatrix(n, n)
+	inverse := newMatrix(n, n)
 	for i := range n {
 		copy(inverse.row(i), work.row(i)[n:])
 	}

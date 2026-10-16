@@ -39,18 +39,18 @@ func NewDlogTable(base GT, lo, hi int64) *DlogTable {
 		if _, seen := t.baby[power]; !seen {
 			t.baby[power] = j
 		}
-		power = MulGT(power, base)
+		power = mulGT(power, base)
 	}
 	return t
 }
 
 func (t *DlogTable) Find(target GT) (int64, bool) {
-	gamma := MulGT(target, t.shift)
+	gamma := mulGT(target, t.shift)
 	for i := uint64(0); i <= t.span/t.steps; i++ {
 		if j, ok := t.baby[gamma]; ok && i*t.steps+j <= t.span {
 			return int64(uint64(t.lo) + i*t.steps + j), true
 		}
-		gamma = MulGT(gamma, t.giant)
+		gamma = mulGT(gamma, t.giant)
 	}
 	return 0, false
 }
