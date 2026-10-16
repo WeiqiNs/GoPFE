@@ -54,17 +54,14 @@ const (
 	pointsPerTask = 16
 )
 
-var g1Generator, g2Generator, gtGenerator = generators()
+var _, _, g1Generator, g2Generator = bls12381.Generators()
+
+var gtGenerator = PairOne(g1Generator, g2Generator)
 
 var (
 	g1Base = lazyFixedBase(g1Generator, bls12381.BatchJacobianToAffineG1)
 	g2Base = lazyFixedBase(g2Generator, batchJacobianToAffineG2)
 )
-
-func generators() (G1, G2, GT) {
-	_, _, g1, g2 := bls12381.Generators()
-	return g1, g2, PairOne(g1, g2)
-}
 
 func NewZp(v int64) Zp {
 	var z Zp
@@ -306,7 +303,14 @@ func (e *PairingProduct) Div(ps []G1, qs G2Side) {
 }
 
 func (e *PairingProduct) MulBilinear(p []G1, f Matrix, q []G2) {
-	e.Mul(combine(p, f), Affine(q))
+	mustMatch(len(p), f.rows)
+	combined := make([]G1, f.cols)
+	parallelize(f.cols, 1, func(lo, hi int) {
+		for j := lo; j < hi; j++ {
+			must(combined[j].MultiExp(p, f.Column(j), ecc.MultiExpConfig{NbTasks: 1}))
+		}
+	})
+	e.Mul(combined, Affine(q))
 }
 
 func (e *PairingProduct) Value() GT {
@@ -336,17 +340,6 @@ func (e *PairingProduct) Value() GT {
 		f.Mul(&f, &loop)
 	})
 	return bls12381.FinalExponentiation(&f)
-}
-
-func combine(p []G1, f Matrix) []G1 {
-	mustMatch(len(p), f.rows)
-	combined := make([]G1, f.cols)
-	parallelize(f.cols, 1, func(lo, hi int) {
-		for j := lo; j < hi; j++ {
-			must(combined[j].MultiExp(p, f.Column(j), ecc.MultiExpConfig{NbTasks: 1}))
-		}
-	})
-	return combined
 }
 
 func GTGenerator() GT {

@@ -53,106 +53,94 @@ func BenchmarkInnerProduct(b *testing.B) { benchmarkSchemes(b, innerProductSchem
 
 func BenchmarkQuadratic(b *testing.B) { benchmarkSchemes(b, quadraticSchemes) }
 
-func (s innerProduct[M, K, P, C]) benchmark(b *testing.B, n int) {
-	x, y, want := innerProductSample(n)
-	msk := must(s.setup(n))
-	sk, ct := must(s.keyGen(msk, y)), must(s.encrypt(msk, x))
-	decrypt, decryptPrepared := s.decryptors(msk, 0, bound)
-	prepared := s.prepare(sk)
-	if got, ok := decrypt(sk, ct); got != want || !ok {
-		b.Fatalf("decrypted (%d, %v), want (%d, true)", got, ok, want)
+type benchmarkInputs[K, P, C any] struct {
+	setup, keyGen, encrypt func()
+	sk                     K
+	ct                     C
+	want                   int64
+	prepare                func(K) P
+	decrypt                decryptor[K, C]
+	decryptPrepared        decryptor[P, C]
+}
+
+func (in benchmarkInputs[K, P, C]) run(b *testing.B) {
+	prepared := in.prepare(in.sk)
+	if got, ok := in.decrypt(in.sk, in.ct); got != in.want || !ok {
+		b.Fatalf("decrypted (%d, %v), want (%d, true)", got, ok, in.want)
 	}
-	if got, ok := decryptPrepared(prepared, ct); got != want || !ok {
-		b.Fatalf("the prepared key decrypted (%d, %v), want (%d, true)", got, ok, want)
+	if got, ok := in.decryptPrepared(prepared, in.ct); got != in.want || !ok {
+		b.Fatalf("the prepared key decrypted (%d, %v), want (%d, true)", got, ok, in.want)
 	}
 	b.Run("Setup", func(b *testing.B) {
 		for b.Loop() {
-			s.setup(n)
+			in.setup()
 		}
 	})
 	b.Run("KeyGen", func(b *testing.B) {
 		for b.Loop() {
-			must(s.keyGen(msk, y))
+			in.keyGen()
 		}
 	})
 	b.Run("Enc", func(b *testing.B) {
 		for b.Loop() {
-			must(s.encrypt(msk, x))
+			in.encrypt()
 		}
 	})
 	b.Run("Dec", func(b *testing.B) {
 		for b.Loop() {
-			decrypt(sk, ct)
+			in.decrypt(in.sk, in.ct)
 		}
 	})
 	b.Run("Prepare", func(b *testing.B) {
 		for b.Loop() {
-			s.prepare(sk)
+			in.prepare(in.sk)
 		}
 	})
 	b.Run("PreparedDec", func(b *testing.B) {
 		for b.Loop() {
-			decryptPrepared(prepared, ct)
+			in.decryptPrepared(prepared, in.ct)
 		}
 	})
 	b.Run("PreparedDecParallel", func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				decryptPrepared(prepared, ct)
+				in.decryptPrepared(prepared, in.ct)
 			}
 		})
 		b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "dec/s")
 	})
 }
 
+func (s innerProduct[M, K, P, C]) benchmark(b *testing.B, n int) {
+	x, y, want := innerProductSample(n)
+	msk := must(s.setup(n))
+	decrypt, decryptPrepared := s.decryptors(msk, 0, bound)
+	benchmarkInputs[K, P, C]{
+		setup:           func() { s.setup(n) },
+		keyGen:          func() { must(s.keyGen(msk, y)) },
+		encrypt:         func() { must(s.encrypt(msk, x)) },
+		sk:              must(s.keyGen(msk, y)),
+		ct:              must(s.encrypt(msk, x)),
+		want:            want,
+		prepare:         s.prepare,
+		decrypt:         decrypt,
+		decryptPrepared: decryptPrepared,
+	}.run(b)
+}
+
 func (s quadratic[PK, M, K, P, C]) benchmark(b *testing.B, n int) {
 	x, y, f, want := quadraticSample(n)
 	pk, msk := s.mustSetup(n)
-	sk, ct := must(s.keyGen(msk, f)), must(s.encrypt(pk, x, y))
 	decrypt, decryptPrepared := s.decryptors(pk, 0, bound)
-	prepared := s.prepare(sk)
-	if got, ok := decrypt(sk, ct); got != want || !ok {
-		b.Fatalf("decrypted (%d, %v), want (%d, true)", got, ok, want)
-	}
-	if got, ok := decryptPrepared(prepared, ct); got != want || !ok {
-		b.Fatalf("the prepared key decrypted (%d, %v), want (%d, true)", got, ok, want)
-	}
-	b.Run("Setup", func(b *testing.B) {
-		for b.Loop() {
-			s.setup(n)
-		}
-	})
-	b.Run("KeyGen", func(b *testing.B) {
-		for b.Loop() {
-			must(s.keyGen(msk, f))
-		}
-	})
-	b.Run("Enc", func(b *testing.B) {
-		for b.Loop() {
-			must(s.encrypt(pk, x, y))
-		}
-	})
-	b.Run("Dec", func(b *testing.B) {
-		for b.Loop() {
-			decrypt(sk, ct)
-		}
-	})
-	b.Run("Prepare", func(b *testing.B) {
-		for b.Loop() {
-			s.prepare(sk)
-		}
-	})
-	b.Run("PreparedDec", func(b *testing.B) {
-		for b.Loop() {
-			decryptPrepared(prepared, ct)
-		}
-	})
-	b.Run("PreparedDecParallel", func(b *testing.B) {
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
-				decryptPrepared(prepared, ct)
-			}
-		})
-		b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "dec/s")
-	})
+	benchmarkInputs[K, P, C]{
+		setup:           func() { s.setup(n) },
+		keyGen:          func() { must(s.keyGen(msk, f)) },
+		encrypt:         func() { must(s.encrypt(pk, x, y)) },
+		sk:              must(s.keyGen(msk, f)),
+		ct:              must(s.encrypt(pk, x, y)),
+		want:            want,
+		prepare:         s.prepare,
+		decrypt:         decrypt,
+		decryptPrepared: decryptPrepared,
+	}.run(b)
 }

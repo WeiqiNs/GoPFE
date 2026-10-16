@@ -58,7 +58,6 @@ func Concat(vs ...Vector) Vector {
 }
 
 func (v Vector) Plus(w Vector) Vector {
-	mustMatch(len(v), len(w))
 	r := make(fr.Vector, len(v))
 	r.Add(fr.Vector(v), fr.Vector(w))
 	return Vector(r)
@@ -71,7 +70,6 @@ func (v Vector) Scale(k Zp) Vector {
 }
 
 func Inner(v, w Vector) Zp {
-	mustMatch(len(v), len(w))
 	return (*fr.Vector)(&v).InnerProduct(fr.Vector(w))
 }
 
@@ -168,17 +166,17 @@ func (m Matrix) invert() (Matrix, Zp, bool) {
 	det := NewZp(1)
 	for col := range n {
 		pivot := col
-		for pivot < n {
-			if entry := work.At(pivot, col); !entry.IsZero() {
-				break
-			}
+		for pivot < n && work.row(pivot)[col].IsZero() {
 			pivot++
 		}
 		if pivot == n {
 			return Matrix{}, Zp{}, false
 		}
 		if pivot != col {
-			work.swapRows(pivot, col)
+			lower, upper := work.row(pivot), work.row(col)
+			for j := range lower {
+				lower[j], upper[j] = upper[j], lower[j]
+			}
 			det = Neg(det)
 		}
 		det = Mul(det, work.At(col, col))
@@ -203,11 +201,4 @@ func (m Matrix) invert() (Matrix, Zp, bool) {
 		copy(inverse.row(i), work.row(i)[n:])
 	}
 	return inverse, det, true
-}
-
-func (m Matrix) swapRows(a, b int) {
-	ra, rb := m.row(a), m.row(b)
-	for j := range ra {
-		ra[j], rb[j] = rb[j], ra[j]
-	}
 }
