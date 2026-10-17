@@ -128,7 +128,7 @@ var innerProductSchemes = []scheme{
 		),
 	},
 	innerProduct[opt.MasterKey, opt.Key, opt.PreparedKey, opt.Ciphertext]{
-		name: "Ojaswi et al.", setup: opt.Setup, keyGen: opt.KeyGen, encrypt: opt.Encrypt, prepare: opt.Prepare,
+		name: "Acharya et al.", setup: opt.Setup, keyGen: opt.KeyGen, encrypt: opt.Encrypt, prepare: opt.Prepare,
 		decryptors: tableDecryptors(
 			generatorBase[opt.MasterKey](opt.Base), opt.Decrypt[opt.Key], opt.Decrypt[opt.PreparedKey],
 		),
@@ -143,7 +143,7 @@ var quadraticSchemes = []scheme{
 		),
 	},
 	quadratic[sgp.PublicKey, sgp.MasterKey, sgp.Key, sgp.PreparedKey, sgp.Ciphertext]{
-		name: "Dufour-Sans et al.", setup: sgp.Setup, keyGen: sgp.KeyGen, encrypt: sgp.Encrypt, prepare: sgp.Prepare,
+		name: "Ryffel et al.", setup: sgp.Setup, keyGen: sgp.KeyGen, encrypt: sgp.Encrypt, prepare: sgp.Prepare,
 		decryptors: tableDecryptors(
 			generatorBase[sgp.PublicKey](sgp.Base), sgp.Decrypt[sgp.Key], sgp.Decrypt[sgp.PreparedKey],
 		),

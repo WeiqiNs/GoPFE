@@ -31,7 +31,7 @@ the quadratic schemes public-key, and all rely on bilinear pairings, hence pairi
 
 - **Eight schemes from the literature**, one package each, all run through one table-driven test suite.
 - **Uses every core.** Pairings, precomputation, generator multiples and matrix inversion split across `GOMAXPROCS`
-  with results identical to a single core. With Ojaswi et al.'s scheme, a prepared key decrypts a length-10 inner
+  with results identical to a single core. With Acharya et al.'s scheme, a prepared key decrypts a length-10 inner
   product in about 1 ms, and 16 goroutines sharing one key reach about 7,700 decryptions per second.
 - **Safe to share.** Keys and lookup tables never change after they are built, and CI runs every test under the race
   detector.
@@ -51,7 +51,7 @@ Inner-product FE, where a key for y decrypts a ciphertext of x to ⟨x, y⟩:
 | Kim et al. | `ipfe/kim` | full | generic group model | [SCN 2018](https://doi.org/10.1007/978-3-319-98113-0_29) |
 | Lin | `ipfe/lin` | full | SXDH | [CRYPTO 2017](https://doi.org/10.1007/978-3-319-63688-7_20) |
 | Kim, Kim and Seo | `ipfe/kks` | full | SXDH | [TCS 2019](https://doi.org/10.1016/j.tcs.2019.03.016) |
-| Ojaswi et al. | `ipfe/opt` | full | generic group model | [CiC 2025](https://doi.org/10.62056/abe0zo-3y) |
+| Acharya et al. | `ipfe/opt` | full | generic group model | [CiC 2025](https://doi.org/10.62056/abe0zo-3y) |
 
 Quadratic FE, where a key for a matrix F decrypts a ciphertext of (x, y) to xᵀFy and anyone with the public key can
 encrypt:
@@ -59,7 +59,7 @@ encrypt:
 | Scheme | Package | Security | Paper |
 | --- | --- | --- | --- |
 | Baltico et al. | `qfe/bcfg` | adaptive, generic group model | [CRYPTO 2017](https://doi.org/10.1007/978-3-319-63688-7_3) |
-| Dufour-Sans et al. | `qfe/sgp` | generic group model | [NeurIPS 2019](https://proceedings.neurips.cc/paper_files/paper/2019/hash/9d28de8ff9bb6a3fa41fddfdc28f3bc1-Abstract.html) |
+| Ryffel et al. | `qfe/sgp` | generic group model | [NeurIPS 2019](https://proceedings.neurips.cc/paper_files/paper/2019/hash/9d28de8ff9bb6a3fa41fddfdc28f3bc1-Abstract.html) |
 
 ## Using it
 
