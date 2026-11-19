@@ -48,10 +48,11 @@ type fixedBase[J, A any, PJ jacobian[J, A], PA affine[A]] struct {
 }
 
 const (
-	windowBits    = 8
-	windowCount   = fr.Bytes
-	windowSize    = 1 << (windowBits - 1)
-	pointsPerTask = 16
+	windowBits     = 8
+	windowCount    = fr.Bytes
+	windowSize     = 1 << (windowBits - 1)
+	pointsPerTask  = 16
+	scalarsPerTask = 1
 )
 
 var _, _, g1Generator, g2Generator = bls12381.Generators()
@@ -171,7 +172,7 @@ func (b *fixedBase[J, A, PJ, PA]) masked(base []A, r Zp, m Vector) []A {
 	mustMatch(len(base), len(m))
 	k := r.BigInt(new(big.Int))
 	sums := make([]J, len(base))
-	parallelize(len(sums), pointsPerTask, func(lo, hi int) {
+	parallelize(len(sums), scalarsPerTask, func(lo, hi int) {
 		for i := lo; i < hi; i++ {
 			encoded := b.sum(m[i])
 			PJ(&sums[i]).FromAffine(&base[i])
