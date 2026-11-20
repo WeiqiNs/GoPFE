@@ -109,6 +109,15 @@ func (s innerProduct[M, K, P, C]) test(t *testing.T) {
 		rejectsTruncated(t, msk)
 		rejectsTruncated(t, sk)
 		rejectsTruncated(t, ct)
+
+		msk = must(s.setup(1))
+		restored = roundTrip(t, msk)
+		sk = roundTrip(t, must(s.keyGen(restored, []int64{-3})))
+		ct = roundTrip(t, must(s.encrypt(msk, []int64{7})))
+		decrypt, _ = s.decryptors(restored, -100, 100)
+		if got, ok := decrypt(sk, ct); got != -21 || !ok {
+			t.Errorf("n = 1: got (%d, %v), want (-21, true)", got, ok)
+		}
 	})
 
 	t.Run("ThreadsShareOneKeyAndTable", func(t *testing.T) {

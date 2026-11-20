@@ -128,6 +128,15 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 		rejectsTruncated(t, msk)
 		rejectsTruncated(t, sk)
 		rejectsTruncated(t, ct)
+
+		pk, msk = s.mustSetup(1)
+		restoredPK, restoredMSK = roundTrip(t, pk), roundTrip(t, msk)
+		sk = roundTrip(t, must(s.keyGen(restoredMSK, [][]int64{{-3}})))
+		ct = roundTrip(t, must(s.encrypt(restoredPK, []int64{7}, []int64{2})))
+		decrypt, _ = s.decryptors(restoredPK, -100, 100)
+		if got, ok := decrypt(sk, ct); got != -42 || !ok {
+			t.Errorf("n = 1: got (%d, %v), want (-42, true)", got, ok)
+		}
 	})
 
 	t.Run("ThreadsShareOneKeyAndTable", func(t *testing.T) {
