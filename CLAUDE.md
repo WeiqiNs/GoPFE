@@ -69,7 +69,8 @@ scheme tables in `README.md`. The same construction belongs in LibPFE, RustPFE a
   (its 2^27+1-column row size overflows only a 32-bit `int`, hence the `GOARCH=386` CI step) and `rejectsTruncated` per scheme.
 - Results do not depend on `GOMAXPROCS`. Group tests force splits with `withProcs(t, 4)` and compare against gnark
   (`TestGeneratorTablesMatchScalarMultiplicationBase`, `TestPairingProductSplitAcrossTasksMatchesGnarkPair`,
-  `TestInvertSplitAcrossTasks`). Task sizes are the constants `pointsPerTask`, `scalarsPerTask`, and `rowsPerTask` in `group`.
+  `TestInvertSplitAcrossTasks`). Task sizes are the constants `pointsPerTask` and `rowsPerTask` in `group`; loops whose items each cost a full
+  scalar multiplication or pairing column (`masked`, `MulBilinear`) pass grain 1.
 - `PairingProduct.Value` copies prepared lines per task because `MillerLoopFixedQ` overwrites its `lines` argument;
   `TestPairingProductSplitAcrossTasksMatchesGnarkPair` calls `Value` twice to catch that.
 - Keys, prepared keys, `DlogTable` and the lazily built generator tables (`g1Base`, `g2Base`, `sync.OnceValue`) are
