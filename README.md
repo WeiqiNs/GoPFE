@@ -71,7 +71,8 @@ encrypt:
   directly; the others share one `group.DlogTable` built over `Base()` (Tomida et al.: `msk.Base()`).
 - `Prepare(sk)` precomputes a key's pairing work once, and `Decrypt` accepts either the key or the prepared key.
 - An encoding is n as a 4-byte big-endian integer, then the fields in declaration order with every length derived
-  from n. Decoding errors match the sentinels in `group/encoding.go` with `errors.Is`.
+  from n. Decoding errors match `group.ErrShape` (an n of 0) or the sentinels in `group/encoding.go` with
+  `errors.Is`.
 
 ## Build and test
 

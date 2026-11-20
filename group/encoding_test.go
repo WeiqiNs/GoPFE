@@ -52,7 +52,7 @@ func TestEncodingRoundTripsEveryElementKind(t *testing.T) {
 		g2  G2
 		g2s []G2
 	}
-	points := 2*pointsPerTask + 1
+	points := 9
 	want := elements{
 		n: 3, zp: NewZp(-1), v: RandomVector(3), m: RandomMatrix(2, 3), g1s: G1MulVec(RandomVector(points)),
 		g2: G2Mul(RandomZp()), g2s: G2MulVec(RandomVector(points)),
@@ -111,7 +111,7 @@ func TestDecodeRejectsMalformedInput(t *testing.T) {
 		d.G2s(2)
 	}
 	header := NewEncoder(1).Bytes()
-	points := G2MulVec(RandomVector(2 * pointsPerTask))
+	points := G2MulVec(RandomVector(8))
 	points = append(points, offSubgroupG2(t))
 	generator, offSubgroup := G1Mul(NewZp(1)), offSubgroupG1(t)
 	g1Uncompressed, g1OffSubgroup := generator.RawBytes(), offSubgroup.Bytes()
@@ -125,6 +125,16 @@ func TestDecodeRejectsMalformedInput(t *testing.T) {
 		{"zero dimension", []byte{0, 0, 0, 0}, readEverything, ErrShape},
 		{
 			"dimension larger than the input", append([]byte{0x40, 0, 0, 0}, make([]byte, 64)...),
+			func(d *Decoder, n int) { d.G1s(2*n + 4) },
+			ErrTruncated,
+		},
+		{
+			"dimension above the int32 range", append([]byte{0x80, 0, 0, 0}, make([]byte, 64)...),
+			func(d *Decoder, n int) { d.G1s(n) },
+			ErrTruncated,
+		},
+		{
+			"square matrix larger than the int32 range", slices.Concat(NewEncoder(8193).Bytes(), make([]byte, 8193*32)),
 			func(d *Decoder, n int) { d.Matrix(n, n) },
 			ErrTruncated,
 		},

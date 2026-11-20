@@ -89,12 +89,13 @@ func Decode[T any](data []byte, target *T, read func(dec *Decoder, n int) T) err
 	if dec.err != nil {
 		return dec.err
 	}
-	n := int(binary.BigEndian.Uint32(header))
+	dimension := binary.BigEndian.Uint32(header)
+	if uint64(dimension) > uint64(len(dec.data)/fr.Bytes) {
+		return fmt.Errorf("%w: dimension %d exceeds the %d bytes that follow", ErrTruncated, dimension, len(dec.data))
+	}
+	n := int(dimension)
 	if err := CheckDimension(n); err != nil {
 		return err
-	}
-	if n > len(dec.data)/fr.Bytes {
-		return fmt.Errorf("%w: dimension %d exceeds the %d bytes that follow", ErrTruncated, n, len(dec.data))
 	}
 	value := read(dec, n)
 	if dec.err != nil {
@@ -173,7 +174,7 @@ func decodePoints[P any, PP compressedPoint[P]](d *Decoder, count, size int) []P
 	}
 	points := make([]P, count)
 	errs := make([]error, count)
-	parallelize(count, pointsPerTask, func(lo, hi int) {
+	parallelize(count, 1, func(lo, hi int) {
 		for i := lo; i < hi; i++ {
 			_, errs[i] = PP(&points[i]).SetBytes(data[i*size : (i+1)*size])
 		}

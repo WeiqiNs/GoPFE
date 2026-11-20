@@ -63,7 +63,7 @@ scheme tables in `README.md`. The same construction belongs in LibPFE, RustPFE a
 - Scheme struct fields are unexported, so values come only from the constructors or `UnmarshalBinary`. Every
   type with an encoding stores n, because n heads it.
 - An encoding is n as 4 big-endian bytes, then the fields in the order the encoder writes them, every length derived
-  from n. `Decode` rejects an n larger than the remaining bytes divided by `fr.Bytes`, `Decoder.take` compares counts
+  from n. `Decode` rejects an n larger than the remaining bytes divided by `fr.Bytes` before converting it to `int`, `Decoder.take` compares counts
   by dividing the remaining length rather than multiplying, and `Decoder.Matrix` checks `cols` before multiplying, so
   no length from the wire overflows a 32-bit `int` or sizes an allocation. Points decode compressed with gnark's
   subgroup check; `Decode` leaves its target untouched on error. Pinned by `TestDecodeRejectsMalformedInput`
@@ -71,8 +71,8 @@ scheme tables in `README.md`. The same construction belongs in LibPFE, RustPFE a
 - Results do not depend on `GOMAXPROCS`. Group tests force splits with `withProcs(t, 4)` and compare against gnark
   (`TestGeneratorTablesMatchScalarMultiplicationBase`, `TestPairingProductSplitAcrossTasksMatchesGnarkPair`,
   `TestInvertSplitAcrossTasks`). Task sizes are the constants `pointsPerTask` and `rowsPerTask` in `group`; loops over independent
-  items (`mulVec`, `masked`, `Prepare`, `MulBilinear`) pass grain 1, and `pointsPerTask` batches the Miller loops in
-  `Value`, which share squarings, and point decoding.
+  items (`mulVec`, `masked`, `Prepare`, `MulBilinear`) pass grain 1, and so does point decoding; `pointsPerTask`
+  batches only the Miller loops in `Value`, which share squarings.
 - `PairingProduct.Value` copies prepared lines per task because `MillerLoopFixedQ` overwrites its `lines` argument;
   `TestPairingProductSplitAcrossTasksMatchesGnarkPair` calls `Value` twice to catch that.
 - Keys, prepared keys, `DlogTable` and the lazily built generator tables (`g1Base`, `g2Base`, `sync.OnceValue`) are
