@@ -93,13 +93,16 @@ func IntMatrix(rows [][]int64, n int) (Matrix, error) {
 	if len(rows) != n {
 		return Matrix{}, fmt.Errorf("%w: got %d rows, want %d", ErrShape, len(rows), n)
 	}
+	for _, row := range rows {
+		if len(row) != n {
+			return Matrix{}, fmt.Errorf("%w: got %d entries, want %d", ErrShape, len(row), n)
+		}
+	}
 	m := newMatrix(n, n)
 	for i, row := range rows {
-		v, err := IntVector(row, n)
-		if err != nil {
-			return Matrix{}, err
+		for j, x := range row {
+			m.set(i, j, NewZp(x))
 		}
-		copy(m.row(i), v)
 	}
 	return m, nil
 }
@@ -186,7 +189,8 @@ func (m Matrix) invert() (Matrix, Zp, bool) {
 			det = Neg(det)
 		}
 		det = Mul(det, work.At(col, col))
-		scale := inverse(work.At(col, col))
+		scale := work.At(col, col)
+		scale.Inverse(&scale)
 		pivotRow := work.row(col)[col:]
 		pivotRow.ScalarMul(pivotRow, &scale)
 		parallelize(n, rowsPerTask, func(lo, hi int) {

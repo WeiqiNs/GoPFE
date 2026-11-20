@@ -57,29 +57,31 @@ scheme tables in `README.md`. The same construction belongs in LibPFE, RustPFE a
 
 - Input errors are returned, not panicked: `Setup` gets `ErrShape` from `group.CheckDimension`, and `KeyGen`/`Encrypt`
   get it from `IntVector`/`IntMatrix`, which also reject a zero-value key's n of 0 (cases `RejectsDimensionsBelowOne`,
-  `RejectsVectorsOfTheWrongLength`, `RejectsInputsOfTheWrongShape`). Mismatched internal lengths, including `Decrypt`
+  `RejectsVectorsOfTheWrongLength`, `RejectsInputsOfTheWrongShape`). `IntMatrix` checks every row length before it
+  allocates the n² entries (`TestIntMatrixRejectsShortRowsBeforeAllocating`, a panic on 32-bit without it). Mismatched internal lengths, including `Decrypt`
   on a key and ciphertext of different n, panic in `group.mustMatch`; `NewDlogTable` panics on lo > hi.
   `TestMismatchedLengthsPanic` pins the group-level panics only; no scheme test decrypts across dimensions.
 - Scheme struct fields are unexported, so values come only from the constructors or `UnmarshalBinary`. Every
   type with an encoding stores n, because n heads it.
 - An encoding is n as 4 big-endian bytes, then the fields in the order the encoder writes them, every length derived
-  from n. `Decode` rejects an n larger than the remaining bytes divided by `fr.Bytes`, `Decoder.take` compares counts
+  from n. `Decode` rejects an n larger than the remaining bytes divided by `fr.Bytes` before converting it to `int`, `Decoder.take` compares counts
   by dividing the remaining length rather than multiplying, and `Decoder.Matrix` checks `cols` before multiplying, so
   no length from the wire overflows a 32-bit `int` or sizes an allocation. Points decode compressed with gnark's
   subgroup check; `Decode` leaves its target untouched on error. Pinned by `TestDecodeRejectsMalformedInput`
   (its 2^27+1-column row size overflows only a 32-bit `int`, hence the `GOARCH=386` CI step) and `rejectsTruncated` per scheme.
 - Results do not depend on `GOMAXPROCS`. Group tests force splits with `withProcs(t, 4)` and compare against gnark
   (`TestGeneratorTablesMatchScalarMultiplicationBase`, `TestPairingProductSplitAcrossTasksMatchesGnarkPair`,
-  `TestInvertSplitAcrossTasks`). Task sizes are the constants `pointsPerTask` and `rowsPerTask` in `group`; loops whose items each cost a full
-  scalar multiplication or pairing column (`masked`, `MulBilinear`) pass grain 1.
+  `TestInvertSplitAcrossTasks`). Task sizes are the constants `pointsPerTask` and `rowsPerTask` in `group`; loops over independent
+  items (`mulVec`, `masked`, `Prepare`, `MulBilinear`) pass grain 1, and so does point decoding; `pointsPerTask`
+  batches only the Miller loops in `Value`, which share squarings.
 - `PairingProduct.Value` copies prepared lines per task because `MillerLoopFixedQ` overwrites its `lines` argument;
   `TestPairingProductSplitAcrossTasksMatchesGnarkPair` calls `Value` twice to catch that.
 - Keys, prepared keys, `DlogTable` and the lazily built generator tables (`g1Base`, `g2Base`, `sync.OnceValue`) are
   read-only after construction, and each `Decrypt` owns its `PairingProduct`, so one key and table serve many
   goroutines (`ThreadsShareOneKeyAndTable`, under `-race` in CI).
 - `DlogTable` does its arithmetic in `uint64`, and `babyStepCount` takes the integer square root by division, so the
-  arithmetic cannot overflow for any int64 bounds; duplicate baby steps keep the smallest exponent (`TestDlogTableFindsExactlyTheRange`,
-  `TestDlogTableOnTheIdentity`).
+  arithmetic cannot overflow for any int64 bounds; duplicate baby steps keep the smallest exponent (`TestBabyStepCountCoversTheSpanWithoutOverflow`,
+  `TestDlogTableFindsExactlyTheRange`, `TestDlogTableOnTheIdentity`).
 
 ## CI
 

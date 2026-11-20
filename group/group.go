@@ -56,7 +56,7 @@ const (
 
 var _, _, g1Generator, g2Generator = bls12381.Generators()
 
-var gtGenerator = pairOne(g1Generator, g2Generator)
+var gtGenerator = Pair([]G1{g1Generator}, Affine{g2Generator})
 
 var (
 	g1Base = lazyFixedBase(g1Generator, bls12381.BatchJacobianToAffineG1)
@@ -96,12 +96,6 @@ func Mul(x, y Zp) Zp {
 func Neg(x Zp) Zp {
 	var z Zp
 	z.Neg(&x)
-	return z
-}
-
-func inverse(x Zp) Zp {
-	var z Zp
-	z.Inverse(&x)
 	return z
 }
 
@@ -159,7 +153,7 @@ func (b *fixedBase[J, A, PJ, PA]) sum(z Zp) J {
 
 func (b *fixedBase[J, A, PJ, PA]) mulVec(v Vector) []A {
 	sums := make([]J, len(v))
-	parallelize(len(v), pointsPerTask, func(lo, hi int) {
+	parallelize(len(v), 1, func(lo, hi int) {
 		for i := lo; i < hi; i++ {
 			sums[i] = b.sum(v[i])
 		}
@@ -251,7 +245,7 @@ func MaskedG2(base []G2, r Zp, m Vector) []G2 {
 
 func Prepare(qs []G2) Prepared {
 	lines := make(Prepared, len(qs))
-	parallelize(len(qs), pointsPerTask, func(lo, hi int) {
+	parallelize(len(qs), 1, func(lo, hi int) {
 		for i := lo; i < hi; i++ {
 			lines[i] = bls12381.PrecomputeLines(qs[i])
 		}
@@ -263,10 +257,6 @@ func Pair(ps []G1, qs G2Side) GT {
 	var e PairingProduct
 	e.Mul(ps, qs)
 	return e.Value()
-}
-
-func pairOne(p G1, q G2) GT {
-	return Pair([]G1{p}, Affine{q})
 }
 
 type PairingProduct struct {

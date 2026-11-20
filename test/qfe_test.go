@@ -57,7 +57,7 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 
 	t.Run("DecryptsOneCiphertextUnderManyKeys", func(t *testing.T) {
 		pk, msk := s.mustSetup(3)
-		decrypt, _ := s.decryptors(pk, -100, 100)
+		decrypt, decryptPrepared := s.decryptors(pk, -100, 100)
 		ct := must(s.encrypt(pk, []int64{1, -2, 3}, []int64{4, 5, -6}))
 		cases := []struct {
 			f    [][]int64
@@ -68,8 +68,12 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 			{[][]int64{{0, 0, 0}, {0, 0, 0}, {0, 0, 1}}, -18},
 		}
 		for _, c := range cases {
-			if got, ok := decrypt(must(s.keyGen(msk, c.f)), ct); got != c.want || !ok {
+			sk := must(s.keyGen(msk, c.f))
+			if got, ok := decrypt(sk, ct); got != c.want || !ok {
 				t.Errorf("f = %v: got (%d, %v), want (%d, true)", c.f, got, ok, c.want)
+			}
+			if got, ok := decryptPrepared(s.prepare(sk), ct); got != c.want || !ok {
+				t.Errorf("f = %v with a prepared key: got (%d, %v), want (%d, true)", c.f, got, ok, c.want)
 			}
 		}
 	})
@@ -124,6 +128,15 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 		rejectsTruncated(t, msk)
 		rejectsTruncated(t, sk)
 		rejectsTruncated(t, ct)
+
+		pk, msk = s.mustSetup(1)
+		restoredPK, restoredMSK = roundTrip(t, pk), roundTrip(t, msk)
+		sk = roundTrip(t, must(s.keyGen(restoredMSK, [][]int64{{-3}})))
+		ct = roundTrip(t, must(s.encrypt(restoredPK, []int64{7}, []int64{2})))
+		decrypt, _ = s.decryptors(restoredPK, -100, 100)
+		if got, ok := decrypt(sk, ct); got != -42 || !ok {
+			t.Errorf("n = 1: got (%d, %v), want (-42, true)", got, ok)
+		}
 	})
 
 	t.Run("ThreadsShareOneKeyAndTable", func(t *testing.T) {
