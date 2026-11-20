@@ -57,7 +57,8 @@ scheme tables in `README.md`. The same construction belongs in LibPFE, RustPFE a
 
 - Input errors are returned, not panicked: `Setup` gets `ErrShape` from `group.CheckDimension`, and `KeyGen`/`Encrypt`
   get it from `IntVector`/`IntMatrix`, which also reject a zero-value key's n of 0 (cases `RejectsDimensionsBelowOne`,
-  `RejectsVectorsOfTheWrongLength`, `RejectsInputsOfTheWrongShape`). Mismatched internal lengths, including `Decrypt`
+  `RejectsVectorsOfTheWrongLength`, `RejectsInputsOfTheWrongShape`). `IntMatrix` checks every row length before it
+  allocates the n² entries (`TestIntMatrixRejectsShortRowsBeforeAllocating`, a panic on 32-bit without it). Mismatched internal lengths, including `Decrypt`
   on a key and ciphertext of different n, panic in `group.mustMatch`; `NewDlogTable` panics on lo > hi.
   `TestMismatchedLengthsPanic` pins the group-level panics only; no scheme test decrypts across dimensions.
 - Scheme struct fields are unexported, so values come only from the constructors or `UnmarshalBinary`. Every
@@ -79,8 +80,8 @@ scheme tables in `README.md`. The same construction belongs in LibPFE, RustPFE a
   read-only after construction, and each `Decrypt` owns its `PairingProduct`, so one key and table serve many
   goroutines (`ThreadsShareOneKeyAndTable`, under `-race` in CI).
 - `DlogTable` does its arithmetic in `uint64`, and `babyStepCount` takes the integer square root by division, so the
-  arithmetic cannot overflow for any int64 bounds; duplicate baby steps keep the smallest exponent (`TestDlogTableFindsExactlyTheRange`,
-  `TestDlogTableOnTheIdentity`).
+  arithmetic cannot overflow for any int64 bounds; duplicate baby steps keep the smallest exponent (`TestBabyStepCountCoversTheSpanWithoutOverflow`,
+  `TestDlogTableFindsExactlyTheRange`, `TestDlogTableOnTheIdentity`).
 
 ## CI
 

@@ -2,6 +2,7 @@ package group
 
 import (
 	"errors"
+	"math"
 	"math/big"
 	"runtime"
 	"slices"
@@ -105,15 +106,31 @@ func TestPairingProductSplitAcrossTasksMatchesGnarkPair(t *testing.T) {
 
 func TestDlogTableFindsExactlyTheRange(t *testing.T) {
 	base := GTGenerator()
-	table := NewDlogTable(base, -5, 10)
+	table := NewDlogTable(base, -5, 5)
 	cases := []struct {
 		exponent int64
 		ok       bool
-	}{{-5, true}, {0, true}, {7, true}, {10, true}, {11, false}, {-6, false}}
+	}{{-5, true}, {0, true}, {3, true}, {5, true}, {6, false}, {-6, false}}
 	for _, c := range cases {
 		if got, ok := table.Find(ExpGT(base, NewZp(c.exponent))); ok != c.ok || (ok && got != c.exponent) {
 			t.Errorf("Find(base^%d) = (%d, %v), want ok %v", c.exponent, got, ok, c.ok)
 		}
+	}
+}
+
+func TestBabyStepCountCoversTheSpanWithoutOverflow(t *testing.T) {
+	cases := []struct{ span, want uint64 }{{0, 1}, {15, 4}, {16, 5}, {math.MaxUint64, 1 << 32}}
+	for _, c := range cases {
+		if got := babyStepCount(c.span); got != c.want {
+			t.Errorf("babyStepCount(%d) = %d, want %d", c.span, got, c.want)
+		}
+	}
+}
+
+func TestIntMatrixRejectsShortRowsBeforeAllocating(t *testing.T) {
+	n := 46341
+	if _, err := IntMatrix(make([][]int64, n), n); !errors.Is(err, ErrShape) {
+		t.Errorf("IntMatrix with %d empty rows: got %v, want ErrShape", n, err)
 	}
 }
 
@@ -136,8 +153,8 @@ func TestMismatchedLengthsPanic(t *testing.T) {
 	mustPanic(t, "NewDlogTable(lo > hi)", func() { NewDlogTable(GTGenerator(), 1, 0) })
 	mustPanic(t, "Plus", func() { two.Plus(three) })
 	mustPanic(t, "Inner", func() { Inner(two, three) })
-	mustPanic(t, "MulVec", func() { m.MulVec(two) })
-	mustPanic(t, "MulMat", func() { three.MulMat(m) })
+	mustPanic(t, "MulVec", func() { RandomMatrix(0, 3).MulVec(two) })
+	mustPanic(t, "MulMat", func() { RandomVector(1).MulMat(m) })
 	mustPanic(t, "must", func() { must(0, errors.New("group: failed")) })
 	mustPanic(t, "MulBilinear", func() { new(PairingProduct).MulBilinear(G1MulVec(three), m, G2MulVec(three)) })
 	mustPanic(t, "MaskedG1", func() { MaskedG1(G1MulVec(two), NewZp(1), three) })

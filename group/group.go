@@ -99,12 +99,6 @@ func Neg(x Zp) Zp {
 	return z
 }
 
-func inverse(x Zp) Zp {
-	var z Zp
-	z.Inverse(&x)
-	return z
-}
-
 func lazyFixedBase[J, A any, PJ jacobian[J, A], PA affine[A]](
 	generator A, normalize func([]J) []A,
 ) func() *fixedBase[J, A, PJ, PA] {
