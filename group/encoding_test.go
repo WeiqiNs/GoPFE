@@ -129,6 +129,11 @@ func TestDecodeRejectsMalformedInput(t *testing.T) {
 			ErrTruncated,
 		},
 		{
+			"dimension above the number of scalars that follow", NewEncoder(2).Zp(NewZp(7)).Bytes(),
+			func(d *Decoder, _ int) { d.Zp() },
+			ErrTruncated,
+		},
+		{
 			"dimension above the int32 range", append([]byte{0x80, 0, 0, 0}, make([]byte, 64)...),
 			func(d *Decoder, n int) { d.G1s(n) },
 			ErrTruncated,

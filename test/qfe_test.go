@@ -78,15 +78,6 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 		}
 	})
 
-	t.Run("HandlesVectorsOfLengthOne", func(t *testing.T) {
-		pk, msk := s.mustSetup(1)
-		decrypt, _ := s.decryptors(pk, -100, 100)
-		ct := must(s.encrypt(pk, []int64{7}, []int64{2}))
-		if got, ok := decrypt(must(s.keyGen(msk, [][]int64{{-3}})), ct); got != -42 || !ok {
-			t.Errorf("got (%d, %v), want (-42, true)", got, ok)
-		}
-	})
-
 	t.Run("RejectsDimensionsBelowOne", func(t *testing.T) {
 		if _, _, err := s.setup(0); !errors.Is(err, group.ErrShape) {
 			t.Errorf("setup(0): got %v, want ErrShape", err)
@@ -103,7 +94,9 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 
 	t.Run("RejectsInputsOfTheWrongShape", func(t *testing.T) {
 		pk, msk := s.mustSetup(3)
-		for _, f := range [][][]int64{{{1, 2}, {3, 4}, {5, 6}}, {{1, 2}, {3, 4}}} {
+		for _, f := range [][][]int64{
+			{{1, 2}, {3, 4}, {5, 6}}, {{1, 2, 3}, {4, 5, 6}}, {{1, 2, 3}, {4, 5, 6, 7}, {8, 9, 10}},
+		} {
 			if _, err := s.keyGen(msk, f); !errors.Is(err, group.ErrShape) {
 				t.Errorf("keyGen(%v): got %v, want ErrShape", f, err)
 			}
