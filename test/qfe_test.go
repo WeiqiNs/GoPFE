@@ -57,7 +57,7 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 
 	t.Run("DecryptsOneCiphertextUnderManyKeys", func(t *testing.T) {
 		pk, msk := s.mustSetup(3)
-		decrypt, _ := s.decryptors(pk, -100, 100)
+		decrypt, decryptPrepared := s.decryptors(pk, -100, 100)
 		ct := must(s.encrypt(pk, []int64{1, -2, 3}, []int64{4, 5, -6}))
 		cases := []struct {
 			f    [][]int64
@@ -68,8 +68,12 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 			{[][]int64{{0, 0, 0}, {0, 0, 0}, {0, 0, 1}}, -18},
 		}
 		for _, c := range cases {
-			if got, ok := decrypt(must(s.keyGen(msk, c.f)), ct); got != c.want || !ok {
+			sk := must(s.keyGen(msk, c.f))
+			if got, ok := decrypt(sk, ct); got != c.want || !ok {
 				t.Errorf("f = %v: got (%d, %v), want (%d, true)", c.f, got, ok, c.want)
+			}
+			if got, ok := decryptPrepared(s.prepare(sk), ct); got != c.want || !ok {
+				t.Errorf("f = %v with a prepared key: got (%d, %v), want (%d, true)", c.f, got, ok, c.want)
 			}
 		}
 	})
