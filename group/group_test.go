@@ -55,6 +55,9 @@ func TestInvertSplitAcrossTasks(t *testing.T) {
 	if got := inverse.MulVec(m.MulVec(v)); !slices.Equal(got, v) {
 		t.Error("inverse(m) * m * v differs from v")
 	}
+	if !slices.Equal(v.MulMat(m), m.Transpose().MulVec(v)) {
+		t.Error("v * m differs from transpose(m) * v")
+	}
 }
 
 func TestInvertRejectsSingularMatrices(t *testing.T) {
@@ -65,7 +68,7 @@ func TestInvertRejectsSingularMatrices(t *testing.T) {
 
 func TestGeneratorTablesMatchScalarMultiplicationBase(t *testing.T) {
 	withProcs(t, 4)
-	scalars := Concat(Vector{NewZp(0), NewZp(-1)}, RandomVector(4*pointsPerTask))
+	scalars := Concat(Vector{NewZp(-1), NewZp(0)}, RandomVector(4*pointsPerTask))
 	r, m := RandomZp(), RandomVector(len(scalars))
 	g1s, g2s := G1MulVec(scalars), G2MulVec(scalars)
 	masked1, masked2 := MaskedG1(g1s, r, m), MaskedG2(g2s, r, m)
@@ -116,6 +119,13 @@ func TestDlogTableFindsExactlyTheRange(t *testing.T) {
 			t.Errorf("Find(base^%d) = (%d, %v), want ok %v", c.exponent, got, ok, c.ok)
 		}
 	}
+	single := NewDlogTable(base, 5, 5)
+	if got, ok := single.Find(ExpGT(base, NewZp(5))); got != 5 || !ok {
+		t.Errorf("Find(base^5) over [5, 5] = (%d, %v), want (5, true)", got, ok)
+	}
+	if _, ok := single.Find(ExpGT(base, NewZp(6))); ok {
+		t.Error("found base^6 in a table over [5, 5]")
+	}
 }
 
 func TestBabyStepCountCoversTheSpanWithoutOverflow(t *testing.T) {
@@ -124,6 +134,13 @@ func TestBabyStepCountCoversTheSpanWithoutOverflow(t *testing.T) {
 		if got := babyStepCount(c.span); got != c.want {
 			t.Errorf("babyStepCount(%d) = %d, want %d", c.span, got, c.want)
 		}
+	}
+}
+
+func TestIntVectorKeepsTheSignOfEachEntry(t *testing.T) {
+	v, err := IntVector([]int64{-3, 5}, 2)
+	if want := (Vector{Neg(NewZp(3)), NewZp(5)}); err != nil || !slices.Equal(v, want) {
+		t.Errorf("IntVector([-3 5], 2) = (%v, %v), want (%v, nil)", v, err, want)
 	}
 }
 
