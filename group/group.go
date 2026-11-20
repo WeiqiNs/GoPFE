@@ -171,7 +171,7 @@ func (b *fixedBase[J, A, PJ, PA]) masked(base []A, r Zp, m Vector) []A {
 	mustMatch(len(base), len(m))
 	k := r.BigInt(new(big.Int))
 	sums := make([]J, len(base))
-	parallelize(len(sums), pointsPerTask, func(lo, hi int) {
+	parallelize(len(sums), 1, func(lo, hi int) {
 		for i := lo; i < hi; i++ {
 			encoded := b.sum(m[i])
 			PJ(&sums[i]).FromAffine(&base[i])
