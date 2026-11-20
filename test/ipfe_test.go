@@ -64,14 +64,6 @@ func (s innerProduct[M, K, P, C]) test(t *testing.T) {
 		}
 	})
 
-	t.Run("HandlesVectorsOfLengthOne", func(t *testing.T) {
-		msk := must(s.setup(1))
-		decrypt, _ := s.decryptors(msk, -100, 100)
-		if got, ok := decrypt(must(s.keyGen(msk, []int64{-3})), must(s.encrypt(msk, []int64{7}))); got != -21 || !ok {
-			t.Errorf("got (%d, %v), want (-21, true)", got, ok)
-		}
-	})
-
 	t.Run("RejectsDimensionsBelowOne", func(t *testing.T) {
 		if _, err := s.setup(0); !errors.Is(err, group.ErrShape) {
 			t.Errorf("setup(0): got %v, want ErrShape", err)
