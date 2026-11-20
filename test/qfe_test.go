@@ -87,6 +87,14 @@ func (s quadratic[PK, M, K, P, C]) test(t *testing.T) {
 		if _, _, err := s.setup(0); !errors.Is(err, group.ErrShape) {
 			t.Errorf("setup(0): got %v, want ErrShape", err)
 		}
+		var zeroPK PK
+		var zeroMSK M
+		if _, err := s.keyGen(zeroMSK, nil); !errors.Is(err, group.ErrShape) {
+			t.Errorf("keyGen(zero-value key): got %v, want ErrShape", err)
+		}
+		if _, err := s.encrypt(zeroPK, nil, nil); !errors.Is(err, group.ErrShape) {
+			t.Errorf("encrypt(zero-value key): got %v, want ErrShape", err)
+		}
 	})
 
 	t.Run("RejectsInputsOfTheWrongShape", func(t *testing.T) {
