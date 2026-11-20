@@ -56,9 +56,10 @@ scheme tables in `README.md`. The same construction belongs in LibPFE, RustPFE a
 ## Design facts
 
 - Input errors are returned, not panicked: `Setup` gets `ErrShape` from `group.CheckDimension`, and `KeyGen`/`Encrypt`
-  get it from `IntVector`/`IntMatrix` (cases `RejectsDimensionsBelowOne`, `RejectsVectorsOfTheWrongLength`,
-  `RejectsInputsOfTheWrongShape`). Mismatched internal lengths, including `Decrypt` on a key and ciphertext of
-  different n, panic in `group.mustMatch`; `NewDlogTable` panics on lo > hi (`TestMismatchedLengthsPanic`).
+  get it from `IntVector`/`IntMatrix`, which also reject a zero-value key's n of 0 (cases `RejectsDimensionsBelowOne`,
+  `RejectsVectorsOfTheWrongLength`, `RejectsInputsOfTheWrongShape`). Mismatched internal lengths, including `Decrypt`
+  on a key and ciphertext of different n, panic in `group.mustMatch`; `NewDlogTable` panics on lo > hi.
+  `TestMismatchedLengthsPanic` pins the group-level panics only; no scheme test decrypts across dimensions.
 - Scheme struct fields are unexported, so values come only from the constructors or `UnmarshalBinary`. Every
   type with an encoding stores n, because n heads it.
 - An encoding is n as 4 big-endian bytes, then the fields in the order the encoder writes them, every length derived
