@@ -43,6 +43,9 @@ func RandomVector(n int) Vector {
 }
 
 func IntVector(xs []int64, n int) (Vector, error) {
+	if err := CheckDimension(n); err != nil {
+		return nil, err
+	}
 	if len(xs) != n {
 		return nil, fmt.Errorf("%w: got %d entries, want %d", ErrShape, len(xs), n)
 	}
@@ -84,6 +87,9 @@ func RandomMatrix(rows, cols int) Matrix {
 }
 
 func IntMatrix(rows [][]int64, n int) (Matrix, error) {
+	if err := CheckDimension(n); err != nil {
+		return Matrix{}, err
+	}
 	if len(rows) != n {
 		return Matrix{}, fmt.Errorf("%w: got %d rows, want %d", ErrShape, len(rows), n)
 	}

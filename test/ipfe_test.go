@@ -76,6 +76,13 @@ func (s innerProduct[M, K, P, C]) test(t *testing.T) {
 		if _, err := s.setup(0); !errors.Is(err, group.ErrShape) {
 			t.Errorf("setup(0): got %v, want ErrShape", err)
 		}
+		var zero M
+		if _, err := s.keyGen(zero, nil); !errors.Is(err, group.ErrShape) {
+			t.Errorf("keyGen(zero-value key): got %v, want ErrShape", err)
+		}
+		if _, err := s.encrypt(zero, nil); !errors.Is(err, group.ErrShape) {
+			t.Errorf("encrypt(zero-value key): got %v, want ErrShape", err)
+		}
 	})
 
 	t.Run("RejectsVectorsOfTheWrongLength", func(t *testing.T) {
